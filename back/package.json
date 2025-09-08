@@ -1,0 +1,28 @@
+{
+    "name": "recycle",
+    "version": "1.0.0",
+    "main": "index.js",
+    "type": "module",
+    "directories": {
+        "test": "test"
+    },
+    "scripts": {
+        "start": "node index.js",
+        "compile": "cd ../crypto && cargo build -r && cd ../back",
+        "test": "nodemon index.js"
+    },
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "body-parser": "^2.2.0",
+        "cors": "^2.8.5",
+        "dotenv": "^17.2.2",
+        "express": "^5.1.0",
+        "express-async-handler": "^1.2.0",
+        "ffi-napi": "^4.0.3",
+        "lodash": "^4.17.21",
+        "nodemon": "^3.1.10",
+        "ref-napi": "^3.0.3"
+    }
+}

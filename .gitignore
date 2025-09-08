@@ -1,0 +1,6 @@
+back/node_modules
+back/test/*
+crypto/target
+crypto/Cargo.lock
+crypto/params/*
+crypto/bench/*
