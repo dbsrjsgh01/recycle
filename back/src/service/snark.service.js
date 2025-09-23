@@ -1,6 +1,5 @@
 import lib from "../lib.js";
 import Format from "../utils/format.js";
-import Parse from "../utils/parse.js";
 
 const param_path = "test/";
 
@@ -20,7 +19,7 @@ function getProof() {
 
 function setup(len) {
     console.time("Setup");
-    if (lib.setup_bn254(param_path, len) != true) {
+    if (lib.setup_dpp_bn254(param_path, len) != true) {
         throw new Error("Setup failed");
     } else {
         console.log("Setup succeeded");
@@ -28,9 +27,9 @@ function setup(len) {
     console.timeEnd("Setup");
 }
 
-function prove() {
+function prove(attr, cond, chk, len) {
     console.time("Prove");
-    if (lib.prove_bn254(param_path) != true) {
+    if (lib.prove_dpp_bn254(param_path, attr, cond, chk, len) != true) {
         throw new Error("Failed to generate proof");
     } else {
         console.log("Proof generation succeeded");
@@ -38,9 +37,9 @@ function prove() {
     console.timeEnd("Prove");
 }
 
-function verify() {
+function verify(cond, len) {
     console.time("Verify");
-    lib.verify_bn254(param_path);
+    lib.verify_dpp_bn254(param_path, cond, len);
     console.timeEnd("Verify");
 }
 

@@ -1,4 +1,4 @@
-use crate::{BasePrimeField, utils::mimc7::*};
+use crate::utils::mimc7::*;
 
 use ark_ec::{AffineRepr, CurveConfig, Group, pairing::Pairing};
 use ark_ff::{
@@ -6,20 +6,14 @@ use ark_ff::{
     biginteger::{BigInteger as _, BigInteger64 as B},
 };
 use ark_r1cs_std::{
-    boolean::Boolean,
-    fields::fp::FpVar,
-    groups::curves::short_weierstrass::{AffineVar, ProjectiveVar},
-    pairing::PairingVar,
-    prelude::*,
-    uint32::UInt32,
+    boolean::Boolean, fields::fp::FpVar, pairing::PairingVar, prelude::*, uint32::UInt32,
 };
 use ark_relations::{
     ns,
-    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, Namespace, SynthesisError, SynthesisMode},
+    r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError, SynthesisMode},
 };
 use ark_std::{Zero, fmt::Debug};
 use std::{
-    borrow::Borrow,
     cmp,
     marker::PhantomData,
     ops::{AddAssign, Mul, MulAssign, Not},
@@ -31,45 +25,41 @@ use std::{
 // 2. Input 더 뭐 넣을지
 
 #[derive(Clone, Debug)]
-pub struct TradeCircuit<E: Pairing, P: PairingVar<E, BasePrimeField<E>>> {
-    pub attr: Option<Vec<BasePrimeField<E>>>,
-    pub sk_s: Option<BasePrimeField<E>>,
-    pub cm_old: Option<E::G1Affine>,
-    pub nf: Option<BasePrimeField<E>>,
-    pub ct: Option<Vec<Vec<E::G1Affine>>>,
+pub struct TradeCircuit<E: Pairing, P: PairingVar<E, E::ScalarField>> {
+    pub attr: Option<Vec<E::ScalarField>>,
+    pub sk_s: Option<E::ScalarField>,
+    pub nf: Option<E::ScalarField>,
+    pub ct: Option<Vec<E::G1Affine>>,
     pub len: usize,
-    round_keys: Vec<BasePrimeField<E>>,
+    round_keys: Vec<E::ScalarField>,
     _cv: PhantomData<P>,
-    // generator, ct_rand,
 }
 
 impl<E, P> TradeCircuit<E, P>
 where
     E: Pairing,
-    P: PairingVar<E, BasePrimeField<E>>,
+    P: PairingVar<E, E::ScalarField>,
 {
-    pub fn get_hash_round_keys() -> Vec<BasePrimeField<E>>
+    pub fn get_hash_round_keys() -> Vec<E::ScalarField>
     where
-        <BasePrimeField<E> as FromStr>::Err: Debug,
+        <E::ScalarField as FromStr>::Err: Debug,
     {
-        MiMC7::<BasePrimeField<E>>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS)
+        MiMC7::<E::ScalarField>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS)
     }
 
     pub fn new(
-        attr: Vec<BasePrimeField<E>>,
-        sk_s: BasePrimeField<E>,
-        cm_old: E::G1Affine,
-        nf: BasePrimeField<E>,
+        attr: Vec<E::ScalarField>,
+        sk_s: E::ScalarField,
+        nf: E::ScalarField,
         len: usize,
-        ct: Vec<Vec<E::G1Affine>>,
+        ct: Vec<E::G1Affine>,
     ) -> Self
     where
-        <BasePrimeField<E> as FromStr>::Err: Debug,
+        <E::ScalarField as FromStr>::Err: Debug,
     {
         Self {
             attr: Some(attr),
             sk_s: Some(sk_s),
-            cm_old: Some(cm_old),
             nf: Some(nf),
             ct: Some(ct),
             len,
@@ -80,19 +70,18 @@ where
 
     pub fn mock(len: usize) -> Self
     where
-        <BasePrimeField<E> as FromStr>::Err: Debug,
+        <E::ScalarField as FromStr>::Err: Debug,
     {
         let round_keys = Self::get_hash_round_keys();
         Self {
-            attr: Some(vec![BasePrimeField::<E>::zero(); len]),
-            sk_s: Some(BasePrimeField::<E>::zero()),
-            cm_old: Some(E::G1Affine::zero()),
-            nf: Some(MiMC7::<BasePrimeField<E>>::mimc7(
-                BasePrimeField::<E>::zero(),
-                BasePrimeField::<E>::zero(),
+            attr: Some(vec![E::ScalarField::zero(); len]),
+            sk_s: Some(E::ScalarField::zero()),
+            nf: Some(MiMC7::<E::ScalarField>::mimc7(
+                E::ScalarField::zero(),
+                E::ScalarField::zero(),
                 &round_keys,
             )),
-            ct: Some(vec![vec![E::G1Affine::zero(); 2]; 1]),
+            ct: Some(vec![E::G1Affine::zero(); 1]),
             len,
             round_keys,
             _cv: PhantomData,
@@ -100,28 +89,24 @@ where
     }
 }
 
-impl<E, P> ConstraintSynthesizer<BasePrimeField<E>> for TradeCircuit<E, P>
+impl<E, P> ConstraintSynthesizer<E::ScalarField> for TradeCircuit<E, P>
 where
     E: Pairing,
-    P: PairingVar<E, BasePrimeField<E>>,
+    P: PairingVar<E, E::ScalarField>,
 {
     fn generate_constraints(
         self,
-        cs: ConstraintSystemRef<BasePrimeField<E>>,
+        cs: ConstraintSystemRef<E::ScalarField>,
     ) -> Result<(), SynthesisError> {
-        let attr = Vec::<FpVar<BasePrimeField<E>>>::new_witness(cs.clone(), || {
+        let attr = Vec::<FpVar<E::ScalarField>>::new_witness(cs.clone(), || {
             self.attr.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let sk_s = FpVar::<BasePrimeField<E>>::new_witness(cs.clone(), || {
+        let sk_s = FpVar::<E::ScalarField>::new_witness(cs.clone(), || {
             self.sk_s.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let cm_old = P::G1Var::new_witness(cs.clone(), || {
-            self.cm_old.ok_or(SynthesisError::AssignmentMissing)
-        })?;
-
-        let nf = FpVar::<BasePrimeField<E>>::new_input(cs.clone(), || {
+        let nf = FpVar::<E::ScalarField>::new_input(cs.clone(), || {
             self.nf.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
@@ -129,15 +114,14 @@ where
             self.ct.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let round_keys =
-            Vec::<FpVar<BasePrimeField<E>>>::new_constant(cs.clone(), self.round_keys)?;
+        let round_keys = Vec::<FpVar<E::ScalarField>>::new_constant(cs.clone(), self.round_keys)?;
 
         // ============================ check nf ============================
         fn mimc7_round<E: Pairing>(
-            mut msg: FpVar<BasePrimeField<E>>,
-            key: FpVar<BasePrimeField<E>>,
-            constant: &FpVar<BasePrimeField<E>>,
-        ) -> FpVar<BasePrimeField<E>> {
+            mut msg: FpVar<E::ScalarField>,
+            key: FpVar<E::ScalarField>,
+            constant: &FpVar<E::ScalarField>,
+        ) -> FpVar<E::ScalarField> {
             msg += key;
             msg += constant;
             let tmp = msg.clone().square().unwrap();
@@ -169,7 +153,7 @@ where
 
 #[cfg(test)]
 mod trade_circuit {
-    use super::{BasePrimeField, TradeCircuit};
+    use super::TradeCircuit;
     use crate::utils::mimc7::*;
 
     use ark_bn254::{Bn254 as E, Fr as F};
@@ -189,7 +173,7 @@ mod trade_circuit {
 
     fn test_cp_trade<E: Pairing>()
     where
-        <BasePrimeField<E> as FromStr>::Err: Debug,
+        <E::ScalarField as FromStr>::Err: Debug,
     {
         use crate::cc_snark::{CcGroth16, prepare_verifying_key};
         use crate::linker::{Linker, snark::LinkSnark};
@@ -204,29 +188,13 @@ mod trade_circuit {
 
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
 
-        let attr = vec![BasePrimeField::<E>::from(2u64); LEN]; // [2, 2, ..., 2]
-        let sk_s = BasePrimeField::<E>::rand(&mut rng);
+        let attr = vec![E::ScalarField::from(2u64); LEN]; // [2, 2, ..., 2]
+        let sk_s = E::ScalarField::rand(&mut rng);
 
         let mimc7_keys =
-            MiMC7::<BasePrimeField<E>>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
+            MiMC7::<E::ScalarField>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
 
-        let nf = MiMC7::<BasePrimeField<E>>::mimc7(attr[0], sk_s, &mimc7_keys);
-
-        // ct
-        let generator = E::G1Affine::rand(&mut rng);
-        let enc_sk = BasePrimeField::<E>::rand(&mut rng);
-        let h = generator * enc_sk;
-        let mut r: Vec<BasePrimeField<E>> = Vec::new();
-        let mut ct: Vec<Vec<E::G1Affine>> = Vec::new();
-        for a in attr.clone() {
-            let r_i = BasePrimeField::<E>::rand(&mut rng);
-            let ct_0 = generator * r_i;
-            let ct_1 = h * r_i + generator * a;
-            r.push(r_i);
-            ct.push(vec![ct_0.into(), ct_1.into()]);
-            // ct.push(ct_0.into());
-            // ct.push(ct_1.into());
-        }
+        let nf = MiMC7::<E::ScalarField>::mimc7(attr[0], sk_s, &mimc7_keys);
 
         // setup
         let circuit = TradeCircuit::<E, P>::mock(LEN);
@@ -246,13 +214,13 @@ mod trade_circuit {
         let (link_ek, link_vk) = LinkSnark::<E>::keygen(&mut rng, &link_pp, link_crs);
 
         // prove
-        let o = BasePrimeField::<E>::rand(&mut rng);
+        let o = E::ScalarField::rand(&mut rng);
         let mut cm = (ck.clone()[0] * o).into();
         for (g, a) in ck.clone().iter().skip(1).zip(attr.clone().into_iter()) {
             cm = (cm + *g * a).into();
         }
 
-        let circuit = TradeCircuit::<E, P>::new(attr.clone(), sk_s, nf, LEN, ct);
+        let circuit = TradeCircuit::<E, P>::new(attr.clone(), sk_s, nf, LEN);
         let cc_prf = CcGroth16::<E>::prove(&cc_ek, circuit, &mut rng).unwrap();
 
         let link_witness =
