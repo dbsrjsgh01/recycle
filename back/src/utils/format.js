@@ -1,6 +1,6 @@
 import Parse from "./parse.js";
 
-function vk(vkJson) {
+function cc_vk(vkJson) {
     const formattedVk = {};
 
     for (const key in vkJson) {
@@ -20,18 +20,17 @@ function vk(vkJson) {
     return formattedVk;
 }
 
-function proof(proofJson) {
+function cc_proof(proofJson) {
     const formattedProof = {};
 
     for (const key in proofJson) {
         if (proofJson.hasOwnProperty(key)) {
             const value = proofJson[key];
-            if (key === "a" || key === "c") {
+
+            if (key === "a" || key === "c" || key === "cm") {
                 formattedProof[key] = Parse.parseAndFormatG1Value(value);
             } else if (key === "b") {
                 formattedProof[key] = Parse.parseAndFormatG2Value(value);
-            } else {
-                formattedProof[key] = value;
             }
         }
     }
@@ -39,9 +38,38 @@ function proof(proofJson) {
     return formattedProof;
 }
 
+function link_vk(vkJson) {
+    const formattedJson = {};
+
+    for (const key in vkJson) {
+        if (vkJson.hasOwnProperty(key)) {
+            const value = vkJson[key];
+            formattedJson[key] = Parse.parseAndFormatG2Value(value);
+        }
+    }
+
+    return formattedJson;
+}
+
+function link_proof(proofJson) {
+    const formattedProof = {};
+
+    // Loop through the keys in the proofJson.
+    for (const key in proofJson) {
+        if (proofJson.hasOwnProperty(key)) {
+            const value = proofJson[key];
+            formattedProof[key] = Parse.parseAndFormatG1Value(value);
+        }
+    }
+
+    return formattedProof;
+}
+
 const Format = {
-    vk,
-    proof,
+    cc_vk,
+    cc_proof,
+    link_vk,
+    link_proof,
 };
 
 export default Format;

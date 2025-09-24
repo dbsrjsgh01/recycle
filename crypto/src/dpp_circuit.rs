@@ -34,10 +34,10 @@ impl<F: PrimeField> DPPCircuit<F> {
         }
     }
 
-    pub fn mock(len: usize) -> Self {
+    pub fn mock(len: usize, cond: Vec<F>) -> Self {
         Self {
             attr: Some(vec![F::zero(); len]),
-            cond: Some(vec![F::zero(); len]),
+            cond: Some(cond),
             chk1: Some(vec![false; len]),
             len,
         }
@@ -46,13 +46,11 @@ impl<F: PrimeField> DPPCircuit<F> {
 
 impl<F: PrimeField> ConstraintSynthesizer<F> for DPPCircuit<F> {
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
-        let attr = Vec::<FpVar<F>>::new_witness(cs.clone(), || {
+        let attr = Vec::<FpVar<F>>::new_input(cs.clone(), || {
             self.attr.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let cond = Vec::<FpVar<F>>::new_input(cs.clone(), || {
-            self.cond.ok_or(SynthesisError::AssignmentMissing)
-        })?;
+        let cond = Vec::<FpVar<F>>::new_constant(cs.clone(), self.cond.unwrap())?;
 
         let chk1 = Vec::<Boolean<F>>::new_witness(cs.clone(), || {
             self.chk1.ok_or(SynthesisError::AssignmentMissing)
@@ -152,7 +150,7 @@ mod dpp_circuit {
         chk1.extend_from_slice(&[false; LEN / 2]); // [0, 0, ..., 0]
 
         // setup
-        let circuit = DPPCircuit::<E::ScalarField>::mock(LEN);
+        let circuit = DPPCircuit::<E::ScalarField>::mock(LEN, cond.clone());
 
         let (cc_ek, cc_vk) = CcGroth16::<E>::circuit_specific_setup(circuit, &mut rng).unwrap();
         let pvk = prepare_verifying_key::<E>(&cc_vk);
@@ -170,6 +168,7 @@ mod dpp_circuit {
         // prove
         let o = E::ScalarField::rand(&mut rng);
         let mut cm = (ck.clone()[0] * o).into();
+        // for (g, a) in ck.clone().iter().skip(1).zip(attr.clone().into_iter()) {
         for (g, a) in ck.clone().iter().skip(1).zip(attr.clone().into_iter()) {
             cm = (cm + *g * a).into();
         }
@@ -178,13 +177,14 @@ mod dpp_circuit {
         let cc_prf = CcGroth16::<E>::prove(&cc_ek, circuit, &mut rng).unwrap();
 
         let link_witness =
-            LinkSnark::<E>::generate_witness(vec![o], attr, vec![cc_prf.clone().open]);
+            LinkSnark::<E>::generate_witness(vec![o], attr.clone(), vec![cc_prf.clone().open]);
+        // LinkSnark::<E>::generate_witness(vec![o], attr, vec![cc_prf.clone().open]);
         let (link_prf, link_cm_aux) =
             LinkSnark::<E>::prove(&mut rng, &link_pp, &link_ek, &link_witness);
 
         // test
         use ark_ec::{AffineRepr, VariableBaseMSM};
-        let instance_assignment = cond.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+        let instance_assignment = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
         let mut computed_cm = E::G1::msm_bigint(&cc_ek.vk.gamma_abc_g1[1..], &instance_assignment);
         computed_cm = computed_cm + cc_ek.vk.eta_gamma_inv_g1.into_group() * cc_prf.open;
         assert_eq!(computed_cm, cc_prf.cm.into(), "Computation Error");

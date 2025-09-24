@@ -12,6 +12,7 @@ pub mod cc_snark;
 pub mod dpp_circuit;
 pub mod linker;
 // pub mod trade_circuit;
+// pub mod trade_data_structure;
 pub mod utils;
 
 pub use ark_crypto_primitives::*;
@@ -83,34 +84,38 @@ impl<E: Pairing> Default for PP<E> {
 }
 
 lazy_static! {
-    // pub static ref CC_PK_FILE: String = "cc_pk.dat".to_string();
     pub static ref CC_VK_FILE: String = "cc_vk.dat".to_string();
     pub static ref CC_PRF_FILE: String = "cc_proof.dat".to_string();
     pub static ref CM_FILE: String = "cm.dat".to_string();
-    // pub static ref LINK_PK_FILE: String = "link_pk.dat".to_string();
     pub static ref LINK_VK_FILE: String = "link_vk.dat".to_string();
     pub static ref LINK_PRF_FILE: String = "link_proof.dat".to_string();
-    // static ref CC_PK: Mutex<ProvingKey<E>> = Mutex::new(ProvingKey::default());
     static ref PARAMS: Mutex<PP<E>> = Mutex::new(PP::<E>::default());
     static ref CC_VK: Mutex<VerifyingKey<E>> = Mutex::new(VerifyingKey::default());
     static ref CC_PRF: Mutex<Proof<E>> = Mutex::new(Proof::default());
-    static ref CM: Mutex<<E as Pairing>::G1Affine> = Mutex::new(<E as Pairing>::G1Affine::default());
-    // static ref LINK_PK: Mutex<<LinkSnark<E> as Linker<E>>::EK> =
-    //     Mutex::new(<LinkSnark<E> as Linker<E>>::EK::default());
+    static ref CM: Mutex<<E as Pairing>::G1Affine> =
+        Mutex::new(<E as Pairing>::G1Affine::default());
     static ref LINK_VK: Mutex<<LinkSnark<E> as Linker<E>>::VK> =
         Mutex::new(<LinkSnark<E> as Linker<E>>::VK::default());
     static ref LINK_PRF: Mutex<<LinkSnark<E> as Linker<E>>::Proof> =
         Mutex::new(<LinkSnark<E> as Linker<E>>::Proof::default());
+    static ref LINK_CM: Mutex<<LinkSnark<E> as Linker<E>>::CM> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::CM::default());
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn setup_dpp_bn254(param_path: *const c_char, len: usize) -> bool {
+pub extern "C" fn setup_dpp_bn254(
+    param_path: *const c_char,
+    len: usize,
+    cond_buf: *const u64,
+) -> bool {
     let path = match utils::path_from_c_str(param_path, "[param_path]") {
         Some(p) => p,
         None => return false,
     };
+    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
 
-    let circuit = DPPCircuit::<F>::mock(len);
+    let circuit = DPPCircuit::<F>::mock(len, cond);
 
     let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
     let (cc_pk, cc_vk) = CcGroth16::<E>::circuit_specific_setup(circuit, &mut rng).unwrap();
@@ -125,28 +130,15 @@ pub extern "C" fn setup_dpp_bn254(param_path: *const c_char, len: usize) -> bool
         LinkSnark::<E>::setup(&mut rng, len, ck.clone(), cc_pk.clone().ck, "dpp");
     let (link_pk, link_vk) = LinkSnark::<E>::keygen(&mut rng, &link_pp, link_crs);
 
-    // let mut cc_pk_bytes = Vec::new();
-    // cc_pk.serialize_compressed(&mut cc_pk_bytes).unwrap();
-    // let cc_pk_file = CC_PK_FILE.as_str();
-    // fs::write(format!("{path}{cc_pk_file}"), cc_pk_bytes).unwrap();
-
     let mut cc_vk_bytes = Vec::new();
     cc_vk.serialize_compressed(&mut cc_vk_bytes).unwrap();
     let cc_vk_file = CC_VK_FILE.as_str();
     fs::write(format!("{path}{cc_vk_file}"), cc_vk_bytes).unwrap();
 
-    // let mut link_pk_bytes = Vec::new();
-    // link_pk.serialize_compressed(&mut link_pk_bytes).unwrap();
-    // let link_pk_file = LINK_PK_FILE.as_str();
-    // fs::write(format!("{path}{link_pk_file}"), link_pk_bytes).unwrap();
-
     let mut link_vk_bytes = Vec::new();
     link_vk.serialize_compressed(&mut link_vk_bytes).unwrap();
     let link_vk_file = LINK_VK_FILE.as_str();
     fs::write(format!("{path}{link_vk_file}"), link_vk_bytes).unwrap();
-
-    // let mut _cc_pk = CC_PK.lock().unwrap();
-    // *_cc_pk = cc_pk;
 
     let mut _pp = PARAMS.lock().unwrap();
     *_pp = PP {
@@ -158,9 +150,6 @@ pub extern "C" fn setup_dpp_bn254(param_path: *const c_char, len: usize) -> bool
 
     let mut _cc_vk = CC_VK.lock().unwrap();
     *_cc_vk = cc_vk;
-
-    // let mut _link_pk = LINK_PK.lock().unwrap();
-    // *_link_pk = link_pk;
 
     let mut _link_vk = LINK_VK.lock().unwrap();
     *_link_vk = link_vk;
@@ -190,7 +179,6 @@ pub extern "C" fn prove_dpp_bn254(
     let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
     let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
 
-    // let cc_pk = CC_PK.lock().unwrap().clone();
     let pp = PARAMS.lock().unwrap().clone();
 
     let circuit = DPPCircuit::<F>::new(attr.clone(), cond.clone(), chk, 50);
@@ -198,41 +186,37 @@ pub extern "C" fn prove_dpp_bn254(
     let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
 
     let o = <E as Pairing>::ScalarField::rand(&mut rng);
-    let attr_repr = cond.iter().map(|s| s.into_bigint()).collect::<Vec<_>>(); // TODO!: cond => attr
-    let mut cm = <E as Pairing>::G1::msm_bigint(&pp.ck[1..], &attr_repr);
-    cm = cm + pp.ck[0].into_group() * o.clone();
+    let attr_repr = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    let cm_proj = <E as Pairing>::G1::msm_bigint(&pp.ck[1..], &attr_repr);
+    let cm: <E as Pairing>::G1Affine = (cm_proj + pp.ck[0].into_group() * o.clone()).into();
 
-    let link_witness = LinkSnark::<E>::generate_witness(vec![o], cond, vec![cc_prf.clone().open]); // TODO!: cond => attr
+    let link_witness = LinkSnark::<E>::generate_witness(vec![o], attr, vec![cc_prf.clone().open]);
     let (link_prf, link_cm_aux) =
         LinkSnark::<E>::prove(&mut rng, &pp.link_pp, &pp.link_pk, &link_witness);
-
-    let mut i = 1;
 
     let mut cc_prf_byte = Vec::new();
     cc_prf.serialize_compressed(&mut cc_prf_byte).unwrap();
     let cc_prf_file = CC_PRF_FILE.as_str();
     fs::write(format!("{path}{cc_prf_file}"), cc_prf_byte).unwrap();
-    println!("{:?}", i += 1);
 
     let mut link_prf_byte = Vec::new();
     link_prf.serialize_compressed(&mut link_prf_byte).unwrap();
     let link_prf_file = LINK_PRF_FILE.as_str();
     fs::write(format!("{path}{link_prf_file}"), link_prf_byte).unwrap();
-    println!("{:?}", i += 1);
 
     let mut cm_byte = Vec::new();
     cm.serialize_compressed(&mut cm_byte).unwrap();
     let cm_file = CM_FILE.as_str();
     fs::write(format!("{path}{cm_file}"), cm_byte).unwrap();
-    println!("{:?}", i += 1);
 
     let mut _cc_prf = CC_PRF.lock().unwrap();
     *_cc_prf = cc_prf;
-    println!("{:?}", i += 1);
 
     let mut _link_prf = LINK_PRF.lock().unwrap();
     *_link_prf = link_prf;
-    println!("{:?}", i += 1);
+
+    let mut _link_cm = LINK_CM.lock().unwrap();
+    *_link_cm = link_cm_aux;
 
     true
 }
@@ -265,7 +249,9 @@ pub extern "C" fn verify_dpp_bn254(
 
     let link_prf = LINK_PRF.lock().unwrap().clone();
 
-    let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, PhantomData);
+    let link_cm = LINK_CM.lock().unwrap().clone();
+
+    let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, link_cm);
 
     assert!(
         CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &(cond)).unwrap(),
@@ -323,13 +309,34 @@ fn test_all() {
     let mut chk1 = vec![true; LEN / 2];
     chk1.extend_from_slice(&[false; LEN / 2]);
 
-    assert!(setup_dpp_bn254(path, LEN), "[DPP] Setup failed");
+    assert!(
+        setup_dpp_bn254(path, LEN, cond.as_ptr()),
+        "[DPP] Setup failed"
+    );
     assert!(
         prove_dpp_bn254(path, attr.as_ptr(), cond.as_ptr(), chk1.as_ptr(), LEN),
         "[DPP] Proof generation failed"
     );
     assert!(
-        verify_dpp_bn254(path, cond.as_ptr(), LEN),
+        verify_dpp_bn254(path, attr.as_ptr(), LEN),
         "[DPP] Verification failed"
     );
+
+    let cc_vk_str = get_cc_vk_bn254(path);
+    let cc_prf_str = get_cc_proof_bn254(path);
+    println!("cc_vk: {}", unsafe {
+        std::ffi::CStr::from_ptr(cc_vk_str).to_string_lossy()
+    });
+    println!("cc_proof: {}", unsafe {
+        std::ffi::CStr::from_ptr(cc_prf_str).to_string_lossy()
+    });
+
+    let link_vk_str = get_link_vk_bn254(path);
+    let link_prf_str = get_link_proof_bn254(path);
+    println!("link_vk: {}", unsafe {
+        std::ffi::CStr::from_ptr(link_vk_str).to_string_lossy()
+    });
+    println!("link_proof: {}", unsafe {
+        std::ffi::CStr::from_ptr(link_prf_str).to_string_lossy()
+    });
 }

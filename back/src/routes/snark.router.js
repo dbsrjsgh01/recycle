@@ -8,10 +8,12 @@ const snarkRouter = express.Router();
 snarkRouter.get("/setup", getSetup);
 snarkRouter.get("/prove", expressAsyncHandler(getProve));
 snarkRouter.get("/verify", getVerify);
-snarkRouter.get("/get/vk", getVk);
-snarkRouter.get("/get/prf", getProof);
+snarkRouter.get("/get/cc/vk", getCcVk);
+snarkRouter.get("/get/cc/prf", getCcProof);
+snarkRouter.get("/get/link/vk", getLinkVk);
+snarkRouter.get("/get/link/prf", getLinkProof);
 
-let attr = new BigUint64Array(50).fill(2n);
+let attr = new BigUint64Array(50).fill(2n); // BigInteger
 let cond = new BigUint64Array(50).fill(1n);
 let chk = new Uint8Array(50).fill(1);
 chk.set(new Uint8Array(25).fill(0), 25);
@@ -21,7 +23,7 @@ const condBuf = Buffer.from(cond.buffer);
 const chkBuf = Buffer.from(chk.buffer);
 
 function getSetup(req, res) {
-    SnarkService.setup(50);
+    SnarkService.setup(50, condBuf);
 
     res.json({
         Setup: true,
@@ -40,13 +42,23 @@ function getVerify(req, res) {
     res.json({ Verification: "Success" });
 }
 
-function getVk(req, res) {
-    const vkJson = SnarkService.getVk();
+function getCcVk(req, res) {
+    const vkJson = SnarkService.getCcVk();
     res.json(vkJson);
 }
 
-function getProof(req, res) {
-    const proofJson = SnarkService.getProof();
+function getCcProof(req, res) {
+    const proofJson = SnarkService.getCcProof();
+    res.json(proofJson);
+}
+
+function getLinkVk(req, res) {
+    const vkJson = SnarkService.getLinkVk();
+    res.json(vkJson);
+}
+
+function getLinkProof(req, res) {
+    const proofJson = SnarkService.getLinkProof();
     res.json(proofJson);
 }
 

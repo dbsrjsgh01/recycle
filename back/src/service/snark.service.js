@@ -3,23 +3,37 @@ import Format from "../utils/format.js";
 
 const param_path = "test/";
 
-function getVk() {
-    const vkJson = JSON.parse(lib.get_vk_bn254(param_path));
-    const formattedVk = Format.vk(vkJson);
+function getCcVk() {
+    const vkJson = JSON.parse(lib.get_cc_vk_bn254(param_path));
+    const formattedVk = Format.cc_vk(vkJson);
 
     return formattedVk;
 }
 
-function getProof() {
-    const proofJson = JSON.parse(lib.get_proof_bn254(param_path));
-    const formattedProof = Format.proof(proofJson);
+function getCcProof() {
+    const proofJson = JSON.parse(lib.get_cc_proof_bn254(param_path));
+    const formattedProof = Format.cc_proof(proofJson);
 
     return formattedProof;
 }
 
-function setup(len) {
+function getLinkVk() {
+    const vkJson = JSON.parse(lib.get_link_vk_bn254(param_path));
+    const formattedVk = Format.link_vk(vkJson);
+
+    return formattedVk;
+}
+
+function getLinkProof() {
+    const proofJson = JSON.parse(lib.get_link_proof_bn254(param_path));
+    const formattedProof = Format.link_proof(proofJson);
+
+    return formattedProof;
+}
+
+function setup(len, cond) {
     console.time("Setup");
-    if (lib.setup_dpp_bn254(param_path, len) != true) {
+    if (lib.setup_dpp_bn254(param_path, len, cond) != true) {
         throw new Error("Setup failed");
     } else {
         console.log("Setup succeeded");
@@ -45,8 +59,10 @@ function verify(cond, len) {
 
 const SnarkService = {
     param_path,
-    getVk,
-    getProof,
+    getCcVk,
+    getCcProof,
+    getLinkVk,
+    getLinkProof,
     setup,
     prove,
     verify,
