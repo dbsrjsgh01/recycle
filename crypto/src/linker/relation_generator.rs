@@ -41,22 +41,18 @@ pub fn generate_cp_trade_relation<E: Pairing>(
     ck: Vec<E::G1Affine>,
     snark_ck: Vec<E::G1Affine>,
 ) -> SparseMatrix<E::G1Affine> {
-    let l = 2;
-    let t = msg_len + 2;
-
-    let mut snark_ck = snark_ck.clone();
-    snark_ck.truncate(msg_len + 1);
-
+    let l = 2 * msg_len + 1; // 2l + 1
+    let t = 2 * msg_len + 1; // 2l + 2, since 'ONE' is contained
     let mut crs = SparseMatrix::new(l, t);
 
-    // cm_attr
-    crs.insert_row_slice(0, 0, &vec![ck[0]]);
     for i in 0..msg_len {
-        crs.insert_row_slice(0, i + 2, &vec![ck[i + 1]]);
+        crs.insert_row_slice(2 * i, i, &vec![ck[1]]); // ct_0 part
+        crs.insert_row_slice(2 * i + 1, i, &vec![ck[0]]); // ct_1 part
+        crs.insert_row_slice(2 * i + 1, i + msg_len + 1, &vec![ck[1]]);
+        // ct_1 part
     }
-
-    // snark_ck
-    crs.insert_row_slice(l - 1, 1, &snark_ck);
+    assert_eq!(snark_ck.len(), msg_len + 1);
+    crs.insert_row_slice(l - 1, msg_len, &snark_ck.to_vec());
 
     crs
 }

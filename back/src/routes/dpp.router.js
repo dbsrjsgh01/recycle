@@ -1,17 +1,17 @@
 import _ from "lodash";
 import express from "express";
 import expressAsyncHandler from "express-async-handler";
-import SnarkService from "../service/snark.service.js";
+import DppService from "../service/dpp.service.js";
 
-const snarkRouter = express.Router();
+const dppRouter = express.Router();
 
-snarkRouter.get("/setup", getSetup);
-snarkRouter.get("/prove", expressAsyncHandler(getProve));
-snarkRouter.get("/verify", getVerify);
-snarkRouter.get("/get/cc/vk", getCcVk);
-snarkRouter.get("/get/cc/prf", getCcProof);
-snarkRouter.get("/get/link/vk", getLinkVk);
-snarkRouter.get("/get/link/prf", getLinkProof);
+dppRouter.get("/setup", getSetup);
+dppRouter.get("/prove", expressAsyncHandler(getProve));
+dppRouter.get("/verify", getVerify);
+dppRouter.get("/get/cc/vk", getCcVk);
+dppRouter.get("/get/cc/prf", getCcProof);
+dppRouter.get("/get/link/vk", getLinkVk);
+dppRouter.get("/get/link/prf", getLinkProof);
 
 let attr = new BigUint64Array(50).fill(2n); // BigInteger
 let cond = new BigUint64Array(50).fill(1n);
@@ -23,7 +23,7 @@ const condBuf = Buffer.from(cond.buffer);
 const chkBuf = Buffer.from(chk.buffer);
 
 function getSetup(req, res) {
-    SnarkService.setup(50, condBuf);
+    DppService.setup(50, condBuf);
 
     res.json({
         Setup: true,
@@ -31,35 +31,35 @@ function getSetup(req, res) {
 }
 
 async function getProve(req, res) {
-    SnarkService.prove(attrBuf, condBuf, chkBuf, 50);
+    DppService.prove(attrBuf, condBuf, chkBuf, 50);
 
     res.json({ Prove: true });
 }
 
 function getVerify(req, res) {
-    SnarkService.verify(condBuf, 50);
+    DppService.verify(condBuf, 50);
 
     res.json({ Verification: "Success" });
 }
 
 function getCcVk(req, res) {
-    const vkJson = SnarkService.getCcVk();
+    const vkJson = DppService.getCcVk();
     res.json(vkJson);
 }
 
 function getCcProof(req, res) {
-    const proofJson = SnarkService.getCcProof();
+    const proofJson = DppService.getCcProof();
     res.json(proofJson);
 }
 
 function getLinkVk(req, res) {
-    const vkJson = SnarkService.getLinkVk();
+    const vkJson = DppService.getLinkVk();
     res.json(vkJson);
 }
 
 function getLinkProof(req, res) {
-    const proofJson = SnarkService.getLinkProof();
+    const proofJson = DppService.getLinkProof();
     res.json(proofJson);
 }
 
-export default snarkRouter;
+export default dppRouter;

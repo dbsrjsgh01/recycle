@@ -1,6 +1,6 @@
 import lib from "../lib.js";
 import Format from "./format.js";
-import param_path from "../service/snark.service.js";
+import param_path from "../service/dpp.service.js";
 
 async function getJsonParam(type) {
     const json = JSON.parse(lib[`get_${type}_bn254`](param_path));

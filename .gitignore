@@ -4,3 +4,5 @@ crypto/target
 crypto/Cargo.lock
 crypto/params/*
 crypto/bench/*
+*backup
+asdf

@@ -10,9 +10,8 @@
 
 pub mod cc_snark;
 pub mod dpp_circuit;
+pub mod encryption;
 pub mod linker;
-// pub mod trade_circuit;
-// pub mod trade_data_structure;
 pub mod utils;
 
 pub use ark_crypto_primitives::*;
@@ -36,6 +35,10 @@ extern crate ark_std;
 extern crate derivative;
 
 use crate::dpp_circuit::DPPCircuit;
+use crate::encryption::cc_enc::CCEnc;
+use crate::encryption::encryption::{ElGamal, Plaintext};
+use crate::encryption::trade_circuit::TradeCircuit;
+use crate::utils::mimc7::*;
 use crate::{
     cc_snark::{
         CcGroth16,
@@ -83,12 +86,36 @@ impl<E: Pairing> Default for PP<E> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct TradePP<E: Pairing> {
+    pub cc_pk: ProvingKey<E>,
+    pub link_pp: <LinkSnark<E> as Linker<E>>::PP,
+    pub link_pk: <LinkSnark<E> as Linker<E>>::EK,
+    pub enc_pp: <ElGamal<E> as CCEnc<E>>::Parameters,
+    pub enc_pk: <ElGamal<E> as CCEnc<E>>::PublicKey,
+    pub enc_ck: <ElGamal<E> as CCEnc<E>>::CommitKey,
+}
+
+impl<E: Pairing> Default for TradePP<E> {
+    fn default() -> Self {
+        Self {
+            cc_pk: ProvingKey::<E>::default(),
+            link_pp: <LinkSnark<E> as Linker<E>>::PP::default(),
+            link_pk: <LinkSnark<E> as Linker<E>>::EK::default(),
+            enc_pp: <ElGamal<E> as CCEnc<E>>::Parameters::default(),
+            enc_pk: <ElGamal<E> as CCEnc<E>>::PublicKey::default(),
+            enc_ck: <ElGamal<E> as CCEnc<E>>::CommitKey::default(),
+        }
+    }
+}
+
 lazy_static! {
-    pub static ref CC_VK_FILE: String = "cc_vk.dat".to_string();
-    pub static ref CC_PRF_FILE: String = "cc_proof.dat".to_string();
-    pub static ref CM_FILE: String = "cm.dat".to_string();
-    pub static ref LINK_VK_FILE: String = "link_vk.dat".to_string();
-    pub static ref LINK_PRF_FILE: String = "link_proof.dat".to_string();
+    // DPP
+    pub static ref CC_VK_FILE: String = "dpp.cc_vk.dat".to_string();
+    pub static ref CC_PRF_FILE: String = "dpp.cc_proof.dat".to_string();
+    pub static ref CM_FILE: String = "dpp.cm.dat".to_string();
+    pub static ref LINK_VK_FILE: String = "dpp.link_vk.dat".to_string();
+    pub static ref LINK_PRF_FILE: String = "dpp.link_proof.dat".to_string();
     static ref PARAMS: Mutex<PP<E>> = Mutex::new(PP::<E>::default());
     static ref CC_VK: Mutex<VerifyingKey<E>> = Mutex::new(VerifyingKey::default());
     static ref CC_PRF: Mutex<Proof<E>> = Mutex::new(Proof::default());
@@ -99,6 +126,25 @@ lazy_static! {
     static ref LINK_PRF: Mutex<<LinkSnark<E> as Linker<E>>::Proof> =
         Mutex::new(<LinkSnark<E> as Linker<E>>::Proof::default());
     static ref LINK_CM: Mutex<<LinkSnark<E> as Linker<E>>::CM> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::CM::default());
+
+    // TRADE
+    pub static ref TRADE_CC_VK_FILE: String = "trade.cc_vk.dat".to_string();
+    pub static ref TRADE_CC_PRF_FILE: String = "trade.cc_proof.dat".to_string();
+    pub static ref TRADE_CT_FILE: String = "trade.ct.dat".to_string();
+    pub static ref TRADE_LINK_VK_FILE: String = "trade.link_vk.dat".to_string();
+    pub static ref TRADE_LINK_PRF_FILE: String = "trade.link_proof.dat".to_string();
+    pub static ref TRADE_ENC_SK_FILE: String = "trade.enc_sk.dat".to_string();
+    static ref TRADE_PARAMS: Mutex<TradePP<E>> = Mutex::new(TradePP::<E>::default());
+    static ref TRADE_CC_VK: Mutex<VerifyingKey<E>> = Mutex::new(VerifyingKey::default());
+    static ref TRADE_CC_PRF: Mutex<Proof<E>> = Mutex::new(Proof::default());
+    static ref TRADE_CT: Mutex<<ElGamal<E> as CCEnc<E>>::Ciphertext> =
+        Mutex::new(<ElGamal<E> as CCEnc<E>>::Ciphertext::default());
+    static ref TRADE_LINK_VK: Mutex<<LinkSnark<E> as Linker<E>>::VK> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::VK::default());
+    static ref TRADE_LINK_PRF: Mutex<<LinkSnark<E> as Linker<E>>::Proof> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::Proof::default());
+    static ref TRADE_LINK_CM: Mutex<<LinkSnark<E> as Linker<E>>::CM> =
         Mutex::new(<LinkSnark<E> as Linker<E>>::CM::default());
 }
 
@@ -181,7 +227,7 @@ pub extern "C" fn prove_dpp_bn254(
 
     let pp = PARAMS.lock().unwrap().clone();
 
-    let circuit = DPPCircuit::<F>::new(attr.clone(), cond.clone(), chk, 50);
+    let circuit = DPPCircuit::<F>::new(attr.clone(), cond.clone(), chk, len);
 
     let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
 
@@ -208,6 +254,9 @@ pub extern "C" fn prove_dpp_bn254(
     cm.serialize_compressed(&mut cm_byte).unwrap();
     let cm_file = CM_FILE.as_str();
     fs::write(format!("{path}{cm_file}"), cm_byte).unwrap();
+
+    let mut _cm = CM.lock().unwrap();
+    *_cm = cm;
 
     let mut _cc_prf = CC_PRF.lock().unwrap();
     *_cc_prf = cc_prf;
@@ -255,51 +304,257 @@ pub extern "C" fn verify_dpp_bn254(
 
     assert!(
         CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &(cond)).unwrap(),
-        "[ccSNARK] Verification failed"
+        "[DPP::ccSNARK] Verification failed"
     );
 
     assert!(
         LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf),
-        "[Linker] Verification failed"
+        "[DPP::Linker] Verification failed"
     );
 
     true
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_cc_vk_bn254(param_path: *const c_char) -> *mut c_char {
-    let c_string_vk = CString::new(cc_vk_from_file::<E>(string_from_ptr(param_path).as_str()))
-        .expect("CString::new failed");
+pub extern "C" fn setup_trade_bn254(
+    param_path: *const c_char,
+    len: usize,
+    nf_buf: *const u64,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
+    let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
+
+    let circuit = TradeCircuit::<F>::mock(len, nf);
+
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+    let (cc_pk, cc_vk) = CcGroth16::<E>::circuit_specific_setup(circuit, &mut rng).unwrap();
+
+    let enc_pp = ElGamal::<E>::setup(&mut rng).unwrap();
+    let (enc_pk, enc_sk, enc_ck) = ElGamal::<E>::keygen(&enc_pp, Box::new(len), &mut rng).unwrap();
+
+    let (link_pp, link_crs) =
+        LinkSnark::<E>::setup(&mut rng, len, enc_ck.ck.clone(), cc_pk.clone().ck, "trade");
+    let (link_pk, link_vk) = LinkSnark::<E>::keygen(&mut rng, &link_pp, link_crs);
+
+    let mut cc_vk_bytes = Vec::new();
+    cc_vk.serialize_compressed(&mut cc_vk_bytes).unwrap();
+    let cc_vk_file = TRADE_CC_VK_FILE.as_str();
+    fs::write(format!("{path}{cc_vk_file}"), cc_vk_bytes).unwrap();
+
+    let mut link_vk_bytes = Vec::new();
+    link_vk.serialize_compressed(&mut link_vk_bytes).unwrap();
+    let link_vk_file = TRADE_LINK_VK_FILE.as_str();
+    fs::write(format!("{path}{link_vk_file}"), link_vk_bytes).unwrap();
+
+    let mut enc_sk_bytes = Vec::new();
+    enc_sk.sk.serialize_compressed(&mut enc_sk_bytes).unwrap();
+    let enc_sk_file = TRADE_ENC_SK_FILE.as_str();
+    fs::write(format!("{path}{enc_sk_file}"), enc_sk_bytes).unwrap();
+
+    let mut _pp = TRADE_PARAMS.lock().unwrap();
+    *_pp = TradePP {
+        cc_pk,
+        link_pp,
+        link_pk,
+        enc_pp,
+        enc_pk,
+        enc_ck,
+    };
+
+    let mut _cc_vk = TRADE_CC_VK.lock().unwrap();
+    *_cc_vk = cc_vk;
+
+    let mut _link_vk = TRADE_LINK_VK.lock().unwrap();
+    *_link_vk = link_vk;
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn prove_trade_bn254(
+    param_path: *const c_char,
+    attr_buf: *const u64,
+    sk_s_buf: *const u64,
+    cm_old_buf: *const u64,
+    nf_buf: *const u64,
+    len: usize,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+
+    let sk_s_val =
+        unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(sk_s_buf, 4)).unwrap() };
+    let sk_s = F::from_bigint(BigInteger256::new(*sk_s_val)).unwrap();
+
+    let cm_old_val =
+        unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(cm_old_buf, 4)).unwrap() };
+    let cm_old = F::from_bigint(BigInteger256::new(*cm_old_val)).unwrap();
+
+    let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
+    let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
+
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+
+    let circuit = TradeCircuit::<F>::new(attr.clone(), sk_s, cm_old, nf, len);
+
+    let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
+
+    let (ct, r) = ElGamal::<E>::encrypt(
+        &pp.enc_pp,
+        &pp.enc_pk,
+        &Plaintext::<E> { msg: attr.clone() },
+        &mut rng,
+    )
+    .unwrap();
+
+    let link_witness =
+        LinkSnark::<E>::generate_witness(r.randness, attr, vec![cc_prf.clone().open]);
+    let (link_prf, link_cm_aux) =
+        LinkSnark::<E>::prove(&mut rng, &pp.link_pp, &pp.link_pk, &link_witness);
+
+    let mut cc_prf_byte = Vec::new();
+    cc_prf.serialize_compressed(&mut cc_prf_byte).unwrap();
+    let cc_prf_file = TRADE_CC_PRF_FILE.as_str();
+    fs::write(format!("{path}{cc_prf_file}"), cc_prf_byte).unwrap();
+
+    let mut link_prf_byte = Vec::new();
+    link_prf.serialize_compressed(&mut link_prf_byte).unwrap();
+    let link_prf_file = TRADE_LINK_PRF_FILE.as_str();
+    fs::write(format!("{path}{link_prf_file}"), link_prf_byte).unwrap();
+
+    let mut ct_byte = Vec::new();
+    ct.serialize_compressed(&mut ct_byte).unwrap();
+    let ct_file = TRADE_CT_FILE.as_str();
+    fs::write(format!("{path}{ct_file}"), ct_byte).unwrap();
+
+    let mut _ct = TRADE_CT.lock().unwrap();
+    *_ct = ct;
+
+    let mut _cc_prf = TRADE_CC_PRF.lock().unwrap();
+    *_cc_prf = cc_prf;
+
+    let mut _link_prf = TRADE_LINK_PRF.lock().unwrap();
+    *_link_prf = link_prf;
+
+    let mut _link_cm = TRADE_LINK_CM.lock().unwrap();
+    *_link_cm = link_cm_aux;
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn verify_trade_bn254(param_path: *const c_char, len: usize) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+
+    let cc_vk = TRADE_CC_VK.lock().unwrap().clone();
+
+    let pvk = prepare_verifying_key(&cc_vk);
+
+    let cc_prf = TRADE_CC_PRF.lock().unwrap().clone();
+
+    let ct = TRADE_CT.lock().unwrap().clone();
+
+    let link_vk = TRADE_LINK_VK.lock().unwrap().clone();
+
+    let link_prf = TRADE_LINK_PRF.lock().unwrap().clone();
+
+    let link_cm = TRADE_LINK_CM.lock().unwrap().clone();
+
+    let ct_instance = ct.ct.clone().into_iter().flatten().collect();
+
+    let link_instance = LinkSnark::<E>::generate_instance(ct_instance, cc_prf.cm, link_cm);
+
+    assert!(
+        CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap(),
+        "[Trade::ccSNARK] Verification failed"
+    );
+
+    assert!(
+        LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf),
+        "[Trade::Linker] Verification failed"
+    );
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_cc_vk_bn254(param_path: *const c_char, mode: bool) -> *mut c_char {
+    let c_string_vk = CString::new(cc_vk_from_file::<E>(
+        string_from_ptr(param_path).as_str(),
+        mode,
+    ))
+    .expect("CString::new failed");
     c_string_vk.into_raw()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_cc_proof_bn254(param_path: *const c_char) -> *mut c_char {
+pub extern "C" fn get_cc_proof_bn254(param_path: *const c_char, mode: bool) -> *mut c_char {
     let c_string_prf = CString::new(cc_proof_from_file::<E>(
         string_from_ptr(param_path).as_str(),
+        mode,
     ))
     .expect("CString::new failed");
     c_string_prf.into_raw()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_link_vk_bn254(param_path: *const c_char) -> *mut c_char {
-    let c_string_vk = CString::new(link_vk_from_file::<E>(string_from_ptr(param_path).as_str()))
-        .expect("CString::new failed");
+pub extern "C" fn get_link_vk_bn254(param_path: *const c_char, mode: bool) -> *mut c_char {
+    let c_string_vk = CString::new(link_vk_from_file::<E>(
+        string_from_ptr(param_path).as_str(),
+        mode,
+    ))
+    .expect("CString::new failed");
     c_string_vk.into_raw()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn get_link_proof_bn254(param_path: *const c_char) -> *mut c_char {
+pub extern "C" fn get_link_proof_bn254(param_path: *const c_char, mode: bool) -> *mut c_char {
     let c_string_prf = CString::new(link_proof_from_file::<E>(
         string_from_ptr(param_path).as_str(),
+        mode,
     ))
     .expect("CString::new failed");
     c_string_prf.into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_nf(sk_s_buf: *const u64, cm_old_buf: *const u64, nf: *mut u64) {
+    let sk_s_val = unsafe { *sk_s_buf };
+    let sk_s = F::from(sk_s_val);
+
+    let cm_old_val = unsafe { *cm_old_buf };
+    let cm_old = F::from(cm_old_val);
+
+    let constants = MiMC7::<F>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
+    let hash = MiMC7::<F>::mimc7(cm_old, sk_s, &constants);
+    let limb = hash.into_bigint().0;
+
+    unsafe {
+        for i in 0..4 {
+            *nf.add(i) = limb[i];
+        }
+    }
 }
 
 #[test]
-fn test_all() {
+fn test_dpp() {
     let c_path = CString::new("./params/").unwrap();
     let path = c_path.as_ptr();
     const LEN: usize = 50;
@@ -322,8 +577,8 @@ fn test_all() {
         "[DPP] Verification failed"
     );
 
-    let cc_vk_str = get_cc_vk_bn254(path);
-    let cc_prf_str = get_cc_proof_bn254(path);
+    let cc_vk_str = get_cc_vk_bn254(path, false);
+    let cc_prf_str = get_cc_proof_bn254(path, false);
     println!("cc_vk: {}", unsafe {
         std::ffi::CStr::from_ptr(cc_vk_str).to_string_lossy()
     });
@@ -331,12 +586,70 @@ fn test_all() {
         std::ffi::CStr::from_ptr(cc_prf_str).to_string_lossy()
     });
 
-    let link_vk_str = get_link_vk_bn254(path);
-    let link_prf_str = get_link_proof_bn254(path);
+    let link_vk_str = get_link_vk_bn254(path, false);
+    let link_prf_str = get_link_proof_bn254(path, false);
     println!("link_vk: {}", unsafe {
         std::ffi::CStr::from_ptr(link_vk_str).to_string_lossy()
     });
     println!("link_proof: {}", unsafe {
         std::ffi::CStr::from_ptr(link_prf_str).to_string_lossy()
     });
+}
+
+#[test]
+fn test_trade() {
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+    let c_path = CString::new("./params/").unwrap();
+    let path = c_path.as_ptr();
+    const LEN: usize = 50;
+
+    let attr = vec![2u64; LEN];
+    let cm_old = u64::rand(&mut rng);
+    let sk_s = u64::rand(&mut rng);
+
+    let mimc7_keys = MiMC7::<F>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
+
+    let nf_fr = MiMC7::<F>::mimc7(F::from(cm_old), F::from(sk_s), &mimc7_keys);
+
+    let nf = nf_fr.into_bigint().0;
+    println!("{:#?}", nf);
+
+    println!("[Trade::Test]");
+
+    assert!(
+        setup_trade_bn254(path, LEN, nf.as_ptr()),
+        "[Trade] Setup failed"
+    );
+    assert!(
+        prove_trade_bn254(path, attr.as_ptr(), &sk_s, &cm_old, nf.as_ptr(), LEN),
+        "[Trade] Proof generation failed"
+    );
+    assert!(verify_trade_bn254(path, LEN), "[Trade] Verification failed");
+
+    let cc_vk_str = get_cc_vk_bn254(path, true);
+    let cc_prf_str = get_cc_proof_bn254(path, true);
+    println!("cc_vk: {}", unsafe {
+        std::ffi::CStr::from_ptr(cc_vk_str).to_string_lossy()
+    });
+    println!("cc_proof: {}", unsafe {
+        std::ffi::CStr::from_ptr(cc_prf_str).to_string_lossy()
+    });
+
+    let link_vk_str = get_link_vk_bn254(path, true);
+    let link_prf_str = get_link_proof_bn254(path, true);
+    println!("link_vk: {}", unsafe {
+        std::ffi::CStr::from_ptr(link_vk_str).to_string_lossy()
+    });
+    println!("link_proof: {}", unsafe {
+        std::ffi::CStr::from_ptr(link_prf_str).to_string_lossy()
+    });
+}
+
+#[test]
+fn test_mimc7() {
+    let xl = 2u64;
+    let xr = 1u64;
+    let mut out = [0u64; 4];
+    get_nf(&xl, &xr, out.as_mut_ptr());
+    println!("{:#?}", out);
 }

@@ -110,7 +110,7 @@ mod dpp_circuit {
         let mut chk1 = vec![true; LEN / 2]; // [1, 1, ..., 1]
         chk1.extend_from_slice(&[false; LEN / 2]); // [0, 0, ..., 0]
 
-        let circuit = DPPCircuit::<F>::new(attr, cond.clone(), chk1, LEN);
+        let circuit = DPPCircuit::<F>::new(attr.clone(), cond.clone(), chk1, LEN);
 
         // number of constraints
         let cs = ark_relations::r1cs::ConstraintSystem::new_ref();
@@ -123,7 +123,7 @@ mod dpp_circuit {
 
         let proof = Groth16::<E>::prove(&pk, circuit, &mut rng).unwrap();
 
-        assert!(Groth16::<E>::verify_with_processed_vk(&pvk, &vec_to_arr(cond), &proof).unwrap());
+        assert!(Groth16::<E>::verify_with_processed_vk(&pvk, &vec_to_arr(attr), &proof).unwrap());
     }
 
     use ark_ec::pairing::Pairing;
@@ -190,7 +190,7 @@ mod dpp_circuit {
         assert_eq!(computed_cm, cc_prf.cm.into(), "Computation Error");
 
         // verify
-        assert!(CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &vec_to_arr(cond),).unwrap());
+        assert!(CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &vec_to_arr(attr)).unwrap());
         let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, link_cm_aux);
         assert!(LinkSnark::<E>::verify(
             &link_pp,

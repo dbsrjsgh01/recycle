@@ -11,7 +11,10 @@ use std::fs::File;
 
 pub mod mimc7;
 
-use crate::{CC_PRF_FILE, CC_VK_FILE, LINK_PRF_FILE, LINK_VK_FILE};
+use crate::{
+    CC_PRF_FILE, CC_VK_FILE, LINK_PRF_FILE, LINK_VK_FILE, TRADE_CC_PRF_FILE, TRADE_CC_VK_FILE,
+    TRADE_LINK_PRF_FILE, TRADE_LINK_VK_FILE,
+};
 
 pub fn path_from_c_str(ptr: *const c_char, log_prefix: &str) -> Option<&str> {
     let c_str = unsafe { CStr::from_ptr(ptr) };
@@ -28,24 +31,33 @@ pub fn get_file_as_byte_vec(filename: &String) -> Vec<u8> {
     buffer
 }
 
-pub fn cc_proof_from_file<E: Pairing>(proof_file_path: &str) -> String {
-    let cc_prf_file = CC_PRF_FILE.as_str();
+pub fn cc_proof_from_file<E: Pairing>(proof_file_path: &str, mode: bool) -> String {
+    let cc_prf_file = match mode {
+        false => CC_PRF_FILE.as_str(),
+        true => TRADE_CC_PRF_FILE.as_str(),
+    };
     let raw_proof = get_file_as_byte_vec(&format!("{proof_file_path}{cc_prf_file}"));
     let proof = Proof::<E>::deserialize_compressed(raw_proof.as_slice()).unwrap();
 
     cc_proof_to_string::<E>(proof)
 }
 
-pub fn cc_vk_from_file<E: Pairing>(vk_file_path: &str) -> String {
-    let cc_vk_file = CC_VK_FILE.as_str();
+pub fn cc_vk_from_file<E: Pairing>(vk_file_path: &str, mode: bool) -> String {
+    let cc_vk_file = match mode {
+        false => CC_VK_FILE.as_str(),
+        true => TRADE_CC_VK_FILE.as_str(),
+    };
     let raw_vk = get_file_as_byte_vec(&format!("{vk_file_path}{cc_vk_file}"));
     let vk = VerifyingKey::<E>::deserialize_compressed(raw_vk.as_slice()).unwrap();
 
     cc_vk_to_string::<E>(vk)
 }
 
-pub fn link_proof_from_file<E: Pairing>(proof_file_path: &str) -> String {
-    let link_prf_file = LINK_PRF_FILE.as_str();
+pub fn link_proof_from_file<E: Pairing>(proof_file_path: &str, mode: bool) -> String {
+    let link_prf_file = match mode {
+        false => LINK_PRF_FILE.as_str(),
+        true => TRADE_LINK_PRF_FILE.as_str(),
+    };
     let raw_proof = get_file_as_byte_vec(&format!("{proof_file_path}{link_prf_file}"));
     let proof =
         <LinkSnark<E> as Linker<E>>::Proof::deserialize_compressed(raw_proof.as_slice()).unwrap();
@@ -53,8 +65,11 @@ pub fn link_proof_from_file<E: Pairing>(proof_file_path: &str) -> String {
     link_proof_to_string::<E>(proof)
 }
 
-pub fn link_vk_from_file<E: Pairing>(vk_file_path: &str) -> String {
-    let link_vk_file = LINK_VK_FILE.as_str();
+pub fn link_vk_from_file<E: Pairing>(vk_file_path: &str, mode: bool) -> String {
+    let link_vk_file = match mode {
+        false => LINK_VK_FILE.as_str(),
+        true => TRADE_LINK_VK_FILE.as_str(),
+    };
     let raw_vk = get_file_as_byte_vec(&format!("{vk_file_path}{link_vk_file}"));
     let vk = <LinkSnark<E> as Linker<E>>::VK::deserialize_compressed(raw_vk.as_slice()).unwrap();
 
