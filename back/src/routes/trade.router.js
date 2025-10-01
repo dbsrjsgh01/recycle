@@ -8,10 +8,12 @@ const tradeRouter = express.Router();
 tradeRouter.post("/setup", expressAsyncHandler(setup));
 tradeRouter.post("/prove", expressAsyncHandler(prove));
 tradeRouter.post("/verify", expressAsyncHandler(verify));
-tradeRouter.get("/get/cc/vk", getCcVk);
-tradeRouter.get("/get/cc/prf", getCcProof);
-tradeRouter.get("/get/link/vk", getLinkVk);
-tradeRouter.get("/get/link/prf", getLinkProof);
+
+// 아래는 dat 파일을 json 형식으로 바꿔 Get-method 호출; 호출은 Rust library 내의 get-method 함수 정의됨
+tradeRouter.get("/get/ccvk", getCcVk);
+tradeRouter.get("/get/ccprf", getCcProof);
+tradeRouter.get("/get/linkvk", getLinkVk);
+tradeRouter.get("/get/linkprf", getLinkProof);
 
 async function setup(req, res) {
     /**
@@ -71,21 +73,25 @@ async function verify(req, res) {
     res.json({ Verification: "Success" });
 }
 
+// http://localhost:3000/trade/get/ccvk
 function getCcVk(req, res) {
     const vkJson = TradeService.getCcVk();
     res.json(vkJson);
 }
 
+// http://localhost:3000/trade/get/ccprf
 function getCcProof(req, res) {
     const proofJson = TradeService.getCcProof();
     res.json(proofJson);
 }
 
+// http://localhost:3000/trade/get/linkvk
 function getLinkVk(req, res) {
     const vkJson = TradeService.getLinkVk();
     res.json(vkJson);
 }
 
+// http://localhost:3000/trade/get/linkprf
 function getLinkProof(req, res) {
     const proofJson = TradeService.getLinkProof();
     res.json(proofJson);

@@ -8,10 +8,12 @@ const dppRouter = express.Router();
 dppRouter.post("/setup", expressAsyncHandler(setup));
 dppRouter.post("/prove", expressAsyncHandler(prove));
 dppRouter.post("/verify", expressAsyncHandler(verify));
-dppRouter.get("/get/cc/vk", getCcVk);
-dppRouter.get("/get/cc/prf", getCcProof);
-dppRouter.get("/get/link/vk", getLinkVk);
-dppRouter.get("/get/link/prf", getLinkProof);
+
+// 아래는 dat 파일을 json 형식으로 바꿔 Get-method 호출; 호출은 Rust library 내의 get-method 함수 정의됨
+dppRouter.get("/get/ccvk", getCcVk);
+dppRouter.get("/get/ccprf", getCcProof);
+dppRouter.get("/get/linkvk", getLinkVk);
+dppRouter.get("/get/linkprf", getLinkProof);
 
 async function setup(req, res) {
     /**
@@ -72,21 +74,25 @@ async function verify(req, res) {
     res.json({ Verification: "Success" });
 }
 
+// http://localhost:3000/dpp/get/ccvk
 function getCcVk(req, res) {
     const vkJson = DppService.getCcVk();
     res.json(vkJson);
 }
 
+// http://localhost:3000/dpp/get/ccprf
 function getCcProof(req, res) {
     const proofJson = DppService.getCcProof();
     res.json(proofJson);
 }
 
+// http://localhost:3000/dpp/get/linkvk
 function getLinkVk(req, res) {
     const vkJson = DppService.getLinkVk();
     res.json(vkJson);
 }
 
+// http://localhost:3000/dpp/get/linkvk
 function getLinkProof(req, res) {
     const proofJson = DppService.getLinkProof();
     res.json(proofJson);
