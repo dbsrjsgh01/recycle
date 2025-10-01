@@ -10,7 +10,7 @@ const lib = ffi.Library("../crypto/target/release/libtest_circuit.dylib", {
     // prove_dpp_bn254(param_path, attr, cond, chk, Length) -> bool
     prove_dpp_bn254: ["bool", ["string", frArray, frArray, boolArray, "int"]],
     // verify_dpp_bn254(param_path, cond, Length) -> bool
-    verify_dpp_bn254: ["bool", ["string", frArray, "int"]],
+    verify_dpp_bn254: ["bool", ["string", "int"]],
 
     // setup_trade_bn254(param_path, Length, nf) -> bool
     setup_trade_bn254: ["bool", ["string", "int", frArray]],
@@ -30,6 +30,9 @@ const lib = ffi.Library("../crypto/target/release/libtest_circuit.dylib", {
 
     // mimc7_bn254(left, right) -> [u64; 4] : mimc7 hash function
     get_nf: ["void", [frArray, frArray, frArray]],
+
+    // formatting unbounded u64 array into modulus number
+    format_fr: ["pointer", ["pointer"]],
 });
 
 export default lib;

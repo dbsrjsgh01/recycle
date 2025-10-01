@@ -9,7 +9,7 @@
     "scripts": {
         "start": "node index.js",
         "compile": "cd ../crypto && cargo build -r && cd ../back",
-        "test": "nodemon index.js"
+        "test": "npm run compile && nodemon index.js"
     },
     "author": "",
     "license": "ISC",
@@ -22,6 +22,7 @@
         "express-async-handler": "^1.2.0",
         "ffi-napi": "^4.0.3",
         "lodash": "^4.17.21",
+        "node-fetch": "^2.7.0",
         "nodemon": "^3.1.10",
         "ref-napi": "^3.0.3"
     }

@@ -51,9 +51,9 @@ function prove(attr, cond, chk, len) {
     console.timeEnd("Prove");
 }
 
-function verify(cond, len) {
+function verify(len) {
     console.time("Verify");
-    lib.verify_dpp_bn254(param_path, cond, len);
+    lib.verify_dpp_bn254(param_path, len);
     console.timeEnd("Verify");
 }
 

@@ -1,9 +1,157 @@
 import express from "express";
 import dppRouter from "./dpp.router.js";
 import tradeRouter from "./trade.router.js";
+import lib from "../lib.js";
 
 const rootRouter = express();
 rootRouter.use("/dpp", dppRouter);
 rootRouter.use("/trade", tradeRouter);
+
+// DEFINE TEST VARIABLES AND FETCH
+
+// ========= DPP variables =========
+let attr = new BigUint64Array(50).fill(2n); // BigInteger
+let cond = new BigUint64Array(50).fill(1n);
+let chk = new Uint8Array(50).fill(1);
+chk.set(new Uint8Array(25).fill(0), 25);
+
+// Rust library에서 주소값 형태로 입력을 받기 때문에 buffer로 건네 줄 예정
+const attrBuf = Buffer.from(attr.buffer);
+const condBuf = Buffer.from(cond.buffer);
+const chkBuf = Buffer.from(chk.buffer);
+
+// ========= Trade variables =========
+let sk_s = new BigUint64Array(1);
+let cm_old = new BigUint64Array(1);
+let nf = new BigUint64Array(4);
+
+// Test 용으로 임의값 추출
+crypto.getRandomValues(sk_s);
+crypto.getRandomValues(cm_old);
+
+// Rust library에서 주소값 형태로 입력을 받기 때문에 buffer로 건네 줄 예정
+let skSBuf = Buffer.from(sk_s.buffer);
+let cmOldBuf = Buffer.from(cm_old.buffer);
+let nfBuf = Buffer.from(nf.buffer);
+
+// nf = mimc7(cm_old, sk_s)
+lib.get_nf(cmOldBuf, skSBuf, nfBuf);
+
+/**
+ * http://localhost:3000/setup
+ * 1. DPP 서킷과 거래 서킷에 대해 공개 파라미터 생성
+ *    /back/test (dpp.cc_vk.dat, dpp.link_vk.dat / trade.cc_vk.dat, trade.link_vk.dat)
+ * 2. 암호화/복호화 키 생성
+ *    /back/test (trade.enc_sk.dat 저장)
+ * 3. 암호화 키 (공개 키; enc_pk), 증명 키 (*.cc_pk, *.link_pk)는 Rust 내 Mutex 형태로 언제든 접근 가능하도록 설정
+ */
+rootRouter.get("/setup", async (req, res) => {
+    /**
+     * BigInt type 변수들은 그대로 옮길 수 없음.
+     * 방법 1) BigInt => String 변환 후 전달
+     * 방법 2) BigIntArray의 주소값을 base64로 인코딩하여 전달
+     */
+    const condStr = Array.from(cond, (x) => x.toString());
+
+    // (DPP 서킷) 공개 파라미터 생성 요청, cond은 (조건값) 공개 입력값으로 상수값으로 저장할 예정
+    const resDpp = await fetch("http://localhost:3000/dpp/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cond: condStr }),
+    });
+
+    // (DPP 서킷) 결과 확인 용
+    const resultDpp = await resDpp.json();
+
+    // (거래 서킷) 공개 파라미터 생성 요청, nf는 (조건값) 공개 입력값
+    const nfStr = Array.from(nf, (x) => x.toString());
+    const len = attr.length;
+
+    // (거래 서킷) 결과 확인 용
+    const resTrade = await fetch("http://localhost:3000/trade/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nf: nfStr, len: len }),
+    });
+
+    const resultTrade = await resTrade.json();
+
+    console.log(resultDpp, resultTrade);
+    res.json({ dpp: resultDpp, trade: resultTrade });
+});
+
+/**
+ * http://localhost:3000/prove-dpp
+ * DPP 서킷 약정값 및 증명값 생성
+ */
+rootRouter.get("/prove-dpp", async (req, res) => {
+    /**
+     * BigInt type 변수들은 그대로 옮길 수 없음.
+     *
+     * 방법 1) BigInt => String 변환 후 전달
+     *
+     * 방법 2) BigIntArray의 주소값을 base64로 인코딩하여 전달
+     */
+    const attrStr = Array.from(attr, (x) => x.toString());
+    const condStr = Array.from(cond, (x) => x.toString());
+    const chkStr = Array.from(chk, (x) => x.toString());
+
+    /**
+     * (DPP 서킷) 약정값 및 증명값 생성 요청 (Commit-and-prove)
+     *
+     * /back/test: dpp.cc_proof.dat, dpp.link_proof.dat, dpp.cm.dat 생성
+     */
+    const resDppProve = await fetch("http://localhost:3000/dpp/prove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attr: attrStr, cond: condStr, chk: chkStr }),
+    });
+
+    // (DPP 서킷) 증명 결과 확인용
+    const resultDppProve = await resDppProve.json();
+
+    console.log(resultDppProve);
+    res.json({ "Prove Status": resultDppProve });
+});
+
+/**
+ * http://localhost:3000/prove-trade
+ * 거래 서킷 약정값 및 암호문, 증명값 생성
+ */
+rootRouter.get("/prove-trade", async (req, res) => {
+    /**
+     * BigInt type 변수들은 그대로 옮길 수 없음.
+     *
+     * 방법 1) BigInt => String 변환 후 전달
+     *
+     * 방법 2) BigIntArray의 주소값을 base64로 인코딩하여 전달
+     */
+    const attrStr = Array.from(attr, (x) => x.toString());
+    const skSStr = Array.from(sk_s, (x) => x.toString());
+    const cmOldStr = Array.from(cm_old, (x) => x.toString());
+    const nfStr = Array.from(nf, (x) => x.toString());
+
+    /**
+     * (거래 서킷) 약정값 및 암호문, 증명값 생성 요청 (Encrypt-and-prove)
+     *
+     * /back/test: trade.cc_proof.dat, trade.link_proof.dat, trade.ct.dat 생성
+     */
+    const resTradeProve = await fetch("http://localhost:3000/trade/prove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            attr: attrStr,
+            sk_s: skSStr,
+            cm_old: cmOldStr,
+            nf: nfStr,
+        }),
+    });
+
+    // (거래 서킷) 증명 결과 확인용
+    const resultTradeProve = await resTradeProve.json();
+
+    console.log(resultTradeProve);
+    res.json({ "Prove Status": resultTradeProve });
+});
 
 export default rootRouter;

@@ -21,7 +21,7 @@ pub use ark_poly::*;
 
 use ark_serialize::CanonicalSerialize;
 pub use pairing::*;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 
 pub(crate) type ConstraintF<C> = <<C as CurveGroup>::BaseField as Field>::BasePrimeField;
 pub(crate) type BasePrimeField<E> =
@@ -271,18 +271,11 @@ pub extern "C" fn prove_dpp_bn254(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn verify_dpp_bn254(
-    param_path: *const c_char,
-    cond_buf: *const u64,
-    len: usize,
-) -> bool {
+pub extern "C" fn verify_dpp_bn254(param_path: *const c_char, len: usize) -> bool {
     let path = match utils::path_from_c_str(param_path, "[param_path]") {
         Some(p) => p,
         None => return false,
     };
-    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
-
-    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
 
     let pp = PARAMS.lock().unwrap().clone();
 
@@ -303,7 +296,7 @@ pub extern "C" fn verify_dpp_bn254(
     let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, link_cm);
 
     assert!(
-        CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &(cond)).unwrap(),
+        CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap(),
         "[DPP::ccSNARK] Verification failed"
     );
 
@@ -394,13 +387,17 @@ pub extern "C" fn prove_trade_bn254(
     let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
     let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
 
-    let sk_s_val =
-        unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(sk_s_buf, 4)).unwrap() };
-    let sk_s = F::from_bigint(BigInteger256::new(*sk_s_val)).unwrap();
+    // let sk_s_val =
+    //     unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(sk_s_buf, 4)).unwrap() };
+    // let sk_s = F::from_bigint(BigInteger256::new(*sk_s_val)).unwrap();
+    let sk_s_val = unsafe { *sk_s_buf };
+    let sk_s = F::from(sk_s_val);
 
-    let cm_old_val =
-        unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(cm_old_buf, 4)).unwrap() };
-    let cm_old = F::from_bigint(BigInteger256::new(*cm_old_val)).unwrap();
+    // let cm_old_val =
+    //     unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(cm_old_buf, 4)).unwrap() };
+    // let cm_old = F::from_bigint(BigInteger256::new(*cm_old_val)).unwrap();
+    let cm_old_val = unsafe { *cm_old_buf };
+    let cm_old = F::from(cm_old_val);
 
     let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
     let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
@@ -553,6 +550,18 @@ pub extern "C" fn get_nf(sk_s_buf: *const u64, cm_old_buf: *const u64, nf: *mut 
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn format_fr(mut val_pt: *mut u64) {
+    let val = unsafe { *val_pt };
+    let val_fr = F::from(val);
+    let mut res = val_fr.into_bigint().0;
+    for i in 0..4 {
+        unsafe {
+            *val_pt.add(i) = res[i];
+        }
+    }
+}
+
 #[test]
 fn test_dpp() {
     let c_path = CString::new("./params/").unwrap();
@@ -572,10 +581,7 @@ fn test_dpp() {
         prove_dpp_bn254(path, attr.as_ptr(), cond.as_ptr(), chk1.as_ptr(), LEN),
         "[DPP] Proof generation failed"
     );
-    assert!(
-        verify_dpp_bn254(path, attr.as_ptr(), LEN),
-        "[DPP] Verification failed"
-    );
+    assert!(verify_dpp_bn254(path, LEN), "[DPP] Verification failed");
 
     let cc_vk_str = get_cc_vk_bn254(path, false);
     let cc_prf_str = get_cc_proof_bn254(path, false);
@@ -612,7 +618,6 @@ fn test_trade() {
     let nf_fr = MiMC7::<F>::mimc7(F::from(cm_old), F::from(sk_s), &mimc7_keys);
 
     let nf = nf_fr.into_bigint().0;
-    println!("{:#?}", nf);
 
     println!("[Trade::Test]");
 
@@ -652,4 +657,13 @@ fn test_mimc7() {
     let mut out = [0u64; 4];
     get_nf(&xl, &xr, out.as_mut_ptr());
     println!("{:#?}", out);
+}
+
+#[test]
+fn format_over_bn254() {
+    let mut rng = test_rng();
+    let mut test_val: u64 = rng.r#gen();
+    println!("[Val] {:#?}", test_val);
+    let formatted_val = format_fr(&mut test_val);
+    println!("[Val] {:#?}", test_val);
 }
