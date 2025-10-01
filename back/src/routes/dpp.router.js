@@ -59,7 +59,7 @@ async function prove(req, res) {
      *
      * WARNING! 현재 req에 대한 에러 처리는 생략
      */
-    const chkStr = req.body.cond;
+    const chkStr = req.body.chk;
     const chk = new Uint8Array(chkStr.map((x) => Number(x)));
     const chkBuf = Buffer.from(chk.buffer);
 

@@ -15,11 +15,6 @@ let cond = new BigUint64Array(50).fill(1n);
 let chk = new Uint8Array(50).fill(1);
 chk.set(new Uint8Array(25).fill(0), 25);
 
-// Rust library에서 주소값 형태로 입력을 받기 때문에 buffer로 건네 줄 예정
-const attrBuf = Buffer.from(attr.buffer);
-const condBuf = Buffer.from(cond.buffer);
-const chkBuf = Buffer.from(chk.buffer);
-
 // ========= Trade variables =========
 let sk_s = new BigUint64Array(1);
 let cm_old = new BigUint64Array(1);
