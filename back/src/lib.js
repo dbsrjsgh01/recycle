@@ -1,10 +1,24 @@
 import ffi from "ffi-napi";
 import ref from "ref-napi";
+import path from "path";
+import { fileURLToPath } from "url";
+import {dirname} from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const boolArray = ref.refType("bool");
 const frArray = ref.refType("uint64");
 
-const lib = ffi.Library("../crypto/target/release/libtest_circuit.dylib", {
+const libPath = {
+    darwin: "libtest_circuit.dylib",
+    linux: "libtest_circuit.so",
+    win32: "test_circuit.dll",
+}[process.platform];
+
+
+const lib = ffi.Library(
+    path.join(__dirname, "..", "..", "crypto", "target", "release", libPath), {
     // setup_dpp_bn254(param_path, Length, cond) -> bool
     setup_dpp_bn254: ["bool", ["string", "int", frArray]],
     // prove_dpp_bn254(param_path, attr, cond, chk, Length) -> bool
@@ -21,6 +35,8 @@ const lib = ffi.Library("../crypto/target/release/libtest_circuit.dylib", {
     ],
     // verify_trade_bn254(param_path, Length) -> bool
     verify_trade_bn254: ["bool", ["string", "int"]],
+    // decrypt_trade_bn254() -> bool
+    decrypt_trade_bn254: ["bool", []],
 
     // get_*_bn254(param_path, boolean) -> string (true => values related to trade / false => values related to dpp)
     get_cc_vk_bn254: ["string", ["string", "bool"]],

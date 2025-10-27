@@ -146,6 +146,7 @@ lazy_static! {
         Mutex::new(<LinkSnark<E> as Linker<E>>::Proof::default());
     static ref TRADE_LINK_CM: Mutex<<LinkSnark<E> as Linker<E>>::CM> =
         Mutex::new(<LinkSnark<E> as Linker<E>>::CM::default());
+    static ref TRADE_ENC_SK: Mutex<<ElGamal<E> as CCEnc<E>>::SecretKey> = Mutex::new(<ElGamal<E> as CCEnc<E>>::SecretKey::default());
 }
 
 #[unsafe(no_mangle)]
@@ -365,6 +366,9 @@ pub extern "C" fn setup_trade_bn254(
     let mut _link_vk = TRADE_LINK_VK.lock().unwrap();
     *_link_vk = link_vk;
 
+    let mut _enc_sk = TRADE_ENC_SK.lock().unwrap();
+    *_enc_sk = enc_sk;
+
     true
 }
 
@@ -492,6 +496,21 @@ pub extern "C" fn verify_trade_bn254(param_path: *const c_char, len: usize) -> b
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn decrypt_trade_bn254() -> bool {
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+
+    let enc_sk = TRADE_ENC_SK.lock().unwrap().clone();
+
+    let ct = TRADE_CT.lock().unwrap().clone();
+
+    let dec_msg = <ElGamal<E> as CCEnc<E>>::decrypt(&pp.enc_pp, &enc_sk, &ct).unwrap();
+
+    println!("[Dec msg] {:#?}", dec_msg.msg);
+
+    true
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn get_cc_vk_bn254(param_path: *const c_char, mode: bool) -> *mut c_char {
     let c_string_vk = CString::new(cc_vk_from_file::<E>(
         string_from_ptr(param_path).as_str(),
@@ -552,8 +571,14 @@ pub extern "C" fn get_nf(sk_s_buf: *const u64, cm_old_buf: *const u64, nf: *mut 
 
 #[unsafe(no_mangle)]
 pub extern "C" fn format_fr(mut val_pt: *mut u64) {
-    let val = unsafe { *val_pt };
-    let val_fr = F::from(val);
+    let mut limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(val_pt, limbs.as_mut_ptr(), 4);
+    }
+    let val_bigint = BigInt::<4>(limbs);
+
+    let val_fr =
+        F::from_bigint(val_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
     let mut res = val_fr.into_bigint().0;
     for i in 0..4 {
         unsafe {
@@ -648,6 +673,8 @@ fn test_trade() {
     println!("link_proof: {}", unsafe {
         std::ffi::CStr::from_ptr(link_prf_str).to_string_lossy()
     });
+
+    decrypt_trade_bn254();
 }
 
 #[test]
@@ -662,8 +689,14 @@ fn test_mimc7() {
 #[test]
 fn format_over_bn254() {
     let mut rng = test_rng();
-    let mut test_val: u64 = rng.r#gen();
+    let mut test_val: [u64; 4] = [0; 4];
+    for i in 0..4 {
+        test_val[i] = rng.r#gen();
+        while i == 3 && test_val[i] > 1u64 << 62 {
+            test_val[i] = rng.r#gen();
+        }
+    }
     println!("[Val] {:#?}", test_val);
-    let formatted_val = format_fr(&mut test_val);
+    let formatted_val = format_fr(test_val.as_mut_ptr());
     println!("[Val] {:#?}", test_val);
 }

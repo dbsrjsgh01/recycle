@@ -8,6 +8,7 @@ const tradeRouter = express.Router();
 tradeRouter.post("/setup", expressAsyncHandler(setup));
 tradeRouter.post("/prove", expressAsyncHandler(prove));
 tradeRouter.post("/verify", expressAsyncHandler(verify));
+tradeRouter.post("/decrypt", expressAsyncHandler(decrypt));
 
 // 아래는 dat 파일을 json 형식으로 바꿔 Get-method 호출; 호출은 Rust library 내의 get-method 함수 정의됨
 tradeRouter.get("/get/ccvk", getCcVk);
@@ -71,6 +72,12 @@ async function verify(req, res) {
     TradeService.verify(50);
 
     res.json({ Verification: "Success" });
+}
+
+async function decrypt(req, res) {
+    TradeService.decrypt();
+
+    res.json({ Decryption: "Success" });
 }
 
 // http://localhost:3000/trade/get/ccvk

@@ -2,6 +2,7 @@ import express from "express";
 import dppRouter from "./dpp.router.js";
 import tradeRouter from "./trade.router.js";
 import lib from "../lib.js";
+import crypto from "crypto";
 
 const rootRouter = express();
 rootRouter.use("/dpp", dppRouter);
@@ -148,5 +149,16 @@ rootRouter.get("/prove-trade", async (req, res) => {
     console.log(resultTradeProve);
     res.json({ "Prove Status": resultTradeProve });
 });
+
+rootRouter.get("/decrypt", async (req, res) => {
+    const resTradeDecrypt = await fetch ("http://localhost:3000/trade/decrypt", {
+        method: "POST",
+    });
+
+    const resultTradeDecrypt  = await resTradeDecrypt.json();
+
+    console.log(resultTradeDecrypt);
+    res.json({"Decryption Status": resultTradeDecrypt});
+})
 
 export default rootRouter;

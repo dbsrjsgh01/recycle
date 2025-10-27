@@ -59,6 +59,12 @@ function verify(len) {
     console.timeEnd("Verify");
 }
 
+function decrypt() {
+    console.time("Decrypt");
+    lib.decrypt_trade_bn254();
+    console.timeEnd("Decrypt");
+}
+
 const SnarkService = {
     param_path,
     getCcVk,
@@ -68,6 +74,7 @@ const SnarkService = {
     setup,
     prove,
     verify,
+    decrypt,
 };
 
 export default SnarkService;

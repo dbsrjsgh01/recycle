@@ -48,9 +48,17 @@ impl<E: Pairing> Default for PublicKey<E> {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SecretKey<E: Pairing> {
     pub sk: E::ScalarField,
+}
+
+impl<E: Pairing> Default for SecretKey<E> {
+    fn default() -> Self {
+        Self {
+            sk: E::ScalarField::default(),
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
