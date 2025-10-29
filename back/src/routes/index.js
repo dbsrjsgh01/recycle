@@ -17,20 +17,19 @@ let chk = new Uint8Array(50).fill(1);
 chk.set(new Uint8Array(25).fill(0), 25);
 
 // ========= Trade variables =========
-let sk_s = new BigUint64Array(1);
-let cm_old = new BigUint64Array(1);
+let sk_s = new BigUint64Array(4);
+let cm_old = new BigUint64Array(4);
 let nf = new BigUint64Array(4);
 
 // Test 용으로 임의값 추출
-crypto.getRandomValues(sk_s);
-crypto.getRandomValues(cm_old);
+lib.get_random_values(sk_s);
+lib.get_random_values(cm_old);
 
 // Rust library에서 주소값 형태로 입력을 받기 때문에 buffer로 건네 줄 예정
 let skSBuf = Buffer.from(sk_s.buffer);
 let cmOldBuf = Buffer.from(cm_old.buffer);
 let nfBuf = Buffer.from(nf.buffer);
 
-// nf = mimc7(cm_old, sk_s)
 lib.get_nf(cmOldBuf, skSBuf, nfBuf);
 
 /**
@@ -149,6 +148,35 @@ rootRouter.get("/prove-trade", async (req, res) => {
     console.log(resultTradeProve);
     res.json({ "Prove Status": resultTradeProve });
 });
+
+rootRouter.get("/verify-dpp", async (req, res) => {
+    const resDppVerify = await fetch ("http://localhost:3000/dpp/verify", {
+        method: "POST",
+    });
+
+    const resultDppVerify = await resDppVerify.json();
+
+    console.log(resultDppVerify);
+    res.json({ "Verification": resultDppVerify});
+})
+
+rootRouter.get("/verify-trade", async (req, res) => {
+    const resTradeVerify = await fetch ("http://localhost:3000/trade/verify", {
+        method: "POST",
+    });
+
+    const resultTradeVerify = await resTradeVerify.json();
+
+    console.log(resultTradeVerify);
+    res.json({ "Verification": resultTradeVerify});
+})
+
+// TEST
+rootRouter.get("/test", (req, res) => {
+    let attrBuf = Buffer.from(attr.buffer);
+    lib.trade_cc_snark_check(attrBuf, skSBuf, cmOldBuf, nfBuf, 50);
+    res.json({Test: "None"});
+})
 
 rootRouter.get("/decrypt", async (req, res) => {
     const resTradeDecrypt = await fetch ("http://localhost:3000/trade/decrypt", {

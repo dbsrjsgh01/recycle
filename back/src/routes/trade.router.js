@@ -75,9 +75,9 @@ async function verify(req, res) {
 }
 
 async function decrypt(req, res) {
-    TradeService.decrypt();
+    let dec_msg = TradeService.decrypt();
 
-    res.json({ Decryption: "Success" });
+    res.json({ Decryption: "Success", MSG: dec_msg });
 }
 
 // http://localhost:3000/trade/get/ccvk

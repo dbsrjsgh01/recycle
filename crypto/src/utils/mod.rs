@@ -1,10 +1,13 @@
 use crate::{
     cc_snark::data_structure::{Proof, VerifyingKey},
+    encryption::{cc_enc::CCEnc, encryption::ElGamal},
     linker::{Linker, snark::LinkSnark},
 };
 use ark_ec::{AffineRepr, CurveGroup, pairing::Pairing};
+use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::{CanonicalDeserialize, Read};
 use core::ops::Neg;
+use num_bigint::BigInt;
 use std::ffi::{CStr, c_char};
 use std::fs;
 use std::fs::File;
@@ -115,6 +118,19 @@ pub fn link_vk_to_string<E: Pairing>(vk: <LinkSnark<E> as Linker<E>>::VK) -> Str
     .to_string()
 }
 
+pub fn dec_msg_to_string<E: Pairing>(dec_msg: <ElGamal<E> as CCEnc<E>>::Plaintext) -> String {
+    let mut dec_msg_bigint = Vec::new();
+
+    for m_i in dec_msg.msg {
+        dec_msg_bigint.push(fr_to_bigint(m_i));
+    }
+
+    serde_json::json!({
+        "msg": format!("{:#?}", dec_msg_bigint),
+    })
+    .to_string()
+}
+
 pub fn string_from_ptr(ptr: *const c_char) -> String {
     unsafe {
         let cstr = CStr::from_ptr(ptr);
@@ -129,4 +145,10 @@ pub fn parse_prime_fields<E: Pairing>(input_string: &str) -> Vec<E::ScalarField>
         .split(delimiter)
         .filter_map(|s| s.parse::<E::ScalarField>().ok())
         .collect()
+}
+
+pub fn fr_to_bigint<F: PrimeField>(x: F) -> BigInt {
+    let x_bytes = x.into_bigint().to_bytes_be();
+
+    BigInt::from_bytes_be(num_bigint::Sign::Plus, &x_bytes)
 }

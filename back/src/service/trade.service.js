@@ -61,8 +61,9 @@ function verify(len) {
 
 function decrypt() {
     console.time("Decrypt");
-    lib.decrypt_trade_bn254();
+    let dec_msg = lib.decrypt_trade_bn254();
     console.timeEnd("Decrypt");
+    return dec_msg;
 }
 
 const SnarkService = {

@@ -36,7 +36,7 @@ const lib = ffi.Library(
     // verify_trade_bn254(param_path, Length) -> bool
     verify_trade_bn254: ["bool", ["string", "int"]],
     // decrypt_trade_bn254() -> bool
-    decrypt_trade_bn254: ["bool", []],
+    decrypt_trade_bn254: ["string", []],
 
     // get_*_bn254(param_path, boolean) -> string (true => values related to trade / false => values related to dpp)
     get_cc_vk_bn254: ["string", ["string", "bool"]],
@@ -46,9 +46,13 @@ const lib = ffi.Library(
 
     // mimc7_bn254(left, right) -> [u64; 4] : mimc7 hash function
     get_nf: ["void", [frArray, frArray, frArray]],
+    get_random_values: ["void", [frArray]],
 
     // formatting unbounded u64 array into modulus number
     format_fr: ["pointer", ["pointer"]],
+
+    // TEST
+    trade_cc_snark_check: ["bool", [frArray, frArray, frArray, frArray, "int"]],
 });
 
 export default lib;

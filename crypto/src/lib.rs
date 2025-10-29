@@ -19,6 +19,7 @@ pub use ark_ec::*;
 pub use ark_ff::*;
 pub use ark_poly::*;
 
+use ark_relations::r1cs::SynthesisError;
 use ark_serialize::CanonicalSerialize;
 pub use pairing::*;
 use rand::{Rng, SeedableRng};
@@ -38,7 +39,7 @@ use crate::dpp_circuit::DPPCircuit;
 use crate::encryption::cc_enc::CCEnc;
 use crate::encryption::encryption::{ElGamal, Plaintext};
 use crate::encryption::trade_circuit::TradeCircuit;
-use crate::utils::mimc7::*;
+use crate::utils::{dec_msg_to_string, mimc7::*};
 use crate::{
     cc_snark::{
         CcGroth16,
@@ -496,7 +497,7 @@ pub extern "C" fn verify_trade_bn254(param_path: *const c_char, len: usize) -> b
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn decrypt_trade_bn254() -> bool {
+pub extern "C" fn decrypt_trade_bn254() -> *mut c_char {
     let pp = TRADE_PARAMS.lock().unwrap().clone();
 
     let enc_sk = TRADE_ENC_SK.lock().unwrap().clone();
@@ -505,9 +506,9 @@ pub extern "C" fn decrypt_trade_bn254() -> bool {
 
     let dec_msg = <ElGamal<E> as CCEnc<E>>::decrypt(&pp.enc_pp, &enc_sk, &ct).unwrap();
 
-    println!("[Dec msg] {:#?}", dec_msg.msg);
+    let c_string_dec_msg = CString::new(dec_msg_to_string(dec_msg)).expect("CString::new failed");
 
-    true
+    c_string_dec_msg.into_raw()
 }
 
 #[unsafe(no_mangle)]
@@ -552,11 +553,21 @@ pub extern "C" fn get_link_proof_bn254(param_path: *const c_char, mode: bool) ->
 
 #[unsafe(no_mangle)]
 pub extern "C" fn get_nf(sk_s_buf: *const u64, cm_old_buf: *const u64, nf: *mut u64) {
-    let sk_s_val = unsafe { *sk_s_buf };
-    let sk_s = F::from(sk_s_val);
+    let mut sk_s_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(sk_s_buf, sk_s_limbs.as_mut_ptr(), 4);
+    }
+    let sk_s_bigint = BigInt::<4>(sk_s_limbs);
+    let sk_s =
+        F::from_bigint(sk_s_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
-    let cm_old_val = unsafe { *cm_old_buf };
-    let cm_old = F::from(cm_old_val);
+    let mut cm_old_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(cm_old_buf, cm_old_limbs.as_mut_ptr(), 4);
+    }
+    let cm_old_bigint = BigInt::<4>(cm_old_limbs);
+    let cm_old =
+        F::from_bigint(cm_old_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
     let constants = MiMC7::<F>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
     let hash = MiMC7::<F>::mimc7(cm_old, sk_s, &constants);
@@ -566,6 +577,18 @@ pub extern "C" fn get_nf(sk_s_buf: *const u64, cm_old_buf: *const u64, nf: *mut 
         for i in 0..4 {
             *nf.add(i) = limb[i];
         }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_random_values(mut val_pt: *mut u64) {
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+    let val_fr = F::rand(&mut rng);
+    let val = val_fr.into_bigint().0;
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(val.as_ptr(), val_pt, 4);
     }
 }
 
@@ -674,13 +697,13 @@ fn test_trade() {
         std::ffi::CStr::from_ptr(link_prf_str).to_string_lossy()
     });
 
-    decrypt_trade_bn254();
+    println!("[Dec] msg: {:#?}", decrypt_trade_bn254());
 }
 
 #[test]
 fn test_mimc7() {
-    let xl = 2u64;
-    let xr = 1u64;
+    let xl = 4987706931486899098u64;
+    let xr = 15415883792398041432u64;
     let mut out = [0u64; 4];
     get_nf(&xl, &xr, out.as_mut_ptr());
     println!("{:#?}", out);
@@ -699,4 +722,99 @@ fn format_over_bn254() {
     println!("[Val] {:#?}", test_val);
     let formatted_val = format_fr(test_val.as_mut_ptr());
     println!("[Val] {:#?}", test_val);
+}
+
+// TEST
+#[unsafe(no_mangle)]
+pub extern "C" fn trade_cc_snark_check(
+    attr_buf: *const u64,
+    sk_s_buf: *const u64,
+    cm_old_buf: *const u64,
+    nf_buf: *const u64,
+    len: usize,
+) -> bool {
+    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+
+    let sk_s_val = unsafe { *sk_s_buf };
+    let sk_s = F::from(sk_s_val);
+
+    let cm_old_val = unsafe { *cm_old_buf };
+    let cm_old = F::from(cm_old_val);
+
+    let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
+    let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
+
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+
+    let cc_vk = TRADE_CC_VK.lock().unwrap().clone();
+
+    let pvk = prepare_verifying_key(&cc_vk);
+
+    let cc_prf = TRADE_CC_PRF.lock().unwrap().clone();
+
+    let ct = TRADE_CT.lock().unwrap().clone();
+
+    let link_vk = TRADE_LINK_VK.lock().unwrap().clone();
+
+    let link_prf = TRADE_LINK_PRF.lock().unwrap().clone();
+
+    let link_cm = TRADE_LINK_CM.lock().unwrap().clone();
+
+    // 1. Check the consistency of cc_snark commitment
+    // committed value: attr
+    let attr_assignment = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    let v_eta_gamma_inv = pp.cc_pk.vk.eta_gamma_inv_g1.into_group() * cc_prf.open;
+    let gamma_abc_inputs_acc_without_one =
+        <E as Pairing>::G1::msm_bigint(&pp.cc_pk.vk.gamma_abc_g1[1..], &attr_assignment.clone());
+    let g_cm: <E as Pairing>::G1Affine =
+        (v_eta_gamma_inv + gamma_abc_inputs_acc_without_one).into();
+    println!("[Original] {:#?}", cc_prf.cm.clone());
+    println!("[Computed] {:#?}", g_cm);
+    assert_eq!(g_cm, cc_prf.cm.clone(), "[ccSNARK] commitment check failed");
+
+    // 2. Check the consistency of cc_snark proof
+    // variable check
+    println!("[PRF] {:#?}", cc_prf);
+
+    let qap = E::multi_miller_loop(
+        [
+            <<E as Pairing>::G1Affine as Into<<E as Pairing>::G1Prepared>>::into(cc_prf.a),
+            <<E as Pairing>::G1Affine as Into<<E as Pairing>::G1Prepared>>::into(
+                (cc_prf.cm + pvk.vk.gamma_abc_g1[0]).into_affine(),
+            ),
+            cc_prf.c.into(),
+        ],
+        [
+            cc_prf.b.into(),
+            pvk.gamma_g2_neg_pc.clone(),
+            pvk.delta_g2_neg_pc.clone(),
+        ],
+    );
+    let test = <E as Pairing>::final_exponentiation(qap).ok_or(SynthesisError::UnexpectedIdentity);
+    let computed_result = test.unwrap().0 == pvk.alpha_g1_beta_g2;
+    println!("[ccSNARK] Verification: {}", computed_result);
+
+    let cc_result = CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap();
+    println!("[ccSNARK] Verification: {}", cc_result);
+
+    // ABC check
+
+    // verification test
+
+    // 3. Check circuit satisfiability
+    use ark_relations::r1cs::ConstraintSynthesizer;
+    println!("[Input] attr:   {:#?}", attr);
+    println!("[Input] sk_s:   {:#?}", sk_s);
+    println!("[Input] cm_old: {:#?}", cm_old);
+    println!("[Input] nf:     {:#?}", nf);
+    let circuit =
+        crate::encryption::trade_circuit::TradeCircuit::<F>::new(attr, sk_s, cm_old, nf, 50);
+    let cs = ark_relations::r1cs::ConstraintSystem::new_ref();
+
+    circuit.clone().generate_constraints(cs.clone()).unwrap();
+    let sat = cs.is_satisfied().unwrap();
+    println!("[Circuit Satisfiability] {:#?}", sat);
+
+    true
 }

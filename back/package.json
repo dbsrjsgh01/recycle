@@ -8,7 +8,7 @@
     },
     "scripts": {
         "start": "node index.js",
-        "compile": "cd ../crypto && cargo build -r --features \"parallel print-trace\" && cd ../back",
+        "compile": "cd ../crypto && cargo build -r --features \"parallel\" && cd ../back",
         "test": "npm run compile && nodemon index.js"
     },
     "author": "",

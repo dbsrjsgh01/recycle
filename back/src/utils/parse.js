@@ -45,6 +45,7 @@ async function toVkParam() {
 async function toProofParam() {
     return await getParamArray("proof");
 }
+
 function parseColumns(data, selectColumns) {
     return data.map((item) => {
         const newItem = {};
