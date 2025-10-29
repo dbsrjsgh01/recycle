@@ -124,6 +124,7 @@ pub fn dec_msg_to_string<E: Pairing>(dec_msg: <ElGamal<E> as CCEnc<E>>::Plaintex
     for m_i in dec_msg.msg {
         dec_msg_bigint.push(fr_to_bigint(m_i));
     }
+    println!("[Converted] {:#?}", dec_msg_bigint);
 
     serde_json::json!({
         "msg": format!("{:#?}", dec_msg_bigint),
