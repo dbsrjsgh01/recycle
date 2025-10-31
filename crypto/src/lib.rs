@@ -61,7 +61,7 @@ use std::{
     sync::Mutex,
 };
 use utils::{
-    cc_proof_from_file, cc_vk_from_file, get_file_as_byte_vec, link_proof_from_file,
+    cc_proof_from_file, cc_vk_from_file, cm_from_file, get_file_as_byte_vec, link_proof_from_file,
     link_vk_from_file, path_from_c_str, string_from_ptr,
 };
 
@@ -297,17 +297,8 @@ pub extern "C" fn verify_dpp_bn254(param_path: *const c_char, len: usize) -> boo
 
     let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, link_cm);
 
-    assert!(
-        CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap(),
-        "[DPP::ccSNARK] Verification failed"
-    );
-
-    assert!(
-        LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf),
-        "[DPP::Linker] Verification failed"
-    );
-
-    true
+    CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap()
+        && LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf)
 }
 
 #[unsafe(no_mangle)]
@@ -392,20 +383,28 @@ pub extern "C" fn prove_trade_bn254(
     let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
     let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
 
-    // let sk_s_val =
-    //     unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(sk_s_buf, 4)).unwrap() };
-    // let sk_s = F::from_bigint(BigInteger256::new(*sk_s_val)).unwrap();
-    let sk_s_val = unsafe { *sk_s_buf };
-    let sk_s = F::from(sk_s_val);
+    let mut sk_s_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(sk_s_buf, sk_s_limbs.as_mut_ptr(), 4);
+    }
+    let sk_s_bigint = BigInt::<4>(sk_s_limbs);
+    let sk_s =
+        F::from_bigint(sk_s_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
-    // let cm_old_val =
-    //     unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(cm_old_buf, 4)).unwrap() };
-    // let cm_old = F::from_bigint(BigInteger256::new(*cm_old_val)).unwrap();
-    let cm_old_val = unsafe { *cm_old_buf };
-    let cm_old = F::from(cm_old_val);
+    let mut cm_old_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(cm_old_buf, cm_old_limbs.as_mut_ptr(), 4);
+    }
+    let cm_old_bigint = BigInt::<4>(cm_old_limbs);
+    let cm_old =
+        F::from_bigint(cm_old_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
-    let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
-    let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
+    let mut nf_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(nf_buf, nf_limbs.as_mut_ptr(), 4);
+    }
+    let nf_bigint = BigInt::<4>(nf_limbs);
+    let nf = F::from_bigint(nf_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
     let pp = TRADE_PARAMS.lock().unwrap().clone();
 
@@ -483,17 +482,16 @@ pub extern "C" fn verify_trade_bn254(param_path: *const c_char, len: usize) -> b
 
     let link_instance = LinkSnark::<E>::generate_instance(ct_instance, cc_prf.cm, link_cm);
 
-    // assert!(
-    //     CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap(),
-    //     "[Trade::ccSNARK] Verification failed"
-    // );
+    let snark_res = CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap();
 
-    assert!(
-        LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf),
-        "[Trade::Linker] Verification failed"
-    );
+    let link_res = LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf);
 
-    true
+    println!("[Verify] SNARK: {}\tLink: {}", snark_res, link_res);
+
+    snark_res && link_res
+
+    // CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap()
+    //     && LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf)
 }
 
 #[unsafe(no_mangle)]
@@ -549,6 +547,13 @@ pub extern "C" fn get_link_proof_bn254(param_path: *const c_char, mode: bool) ->
     ))
     .expect("CString::new failed");
     c_string_prf.into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_cm_bn254(param_path: *const c_char) -> *mut c_char {
+    let c_string_cm = CString::new(cm_from_file::<E>(string_from_ptr(param_path).as_str()))
+        .expect("CString::new failed");
+    c_string_cm.into_raw()
 }
 
 #[unsafe(no_mangle)]
@@ -658,12 +663,18 @@ fn test_trade() {
     const LEN: usize = 50;
 
     let attr = vec![2u64; LEN];
-    let cm_old = u64::rand(&mut rng);
-    let sk_s = u64::rand(&mut rng);
+    let mut cm_old_u64: [u64; 4] = [0; 4];
+    let mut sk_s_u64: [u64; 4] = [0; 4];
+    get_random_values(cm_old_u64.as_mut_ptr());
+    get_random_values(sk_s_u64.as_mut_ptr());
+    let cm_old_bigint = BigInt::<4>(cm_old_u64);
+    let sk_s_bigint = BigInt::<4>(sk_s_u64);
+    let cm_old = F::from(cm_old_bigint);
+    let sk_s = F::from(sk_s_bigint);
 
     let mimc7_keys = MiMC7::<F>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
 
-    let nf_fr = MiMC7::<F>::mimc7(F::from(cm_old), F::from(sk_s), &mimc7_keys);
+    let nf_fr = MiMC7::<F>::mimc7(cm_old, sk_s, &mimc7_keys);
 
     let nf = nf_fr.into_bigint().0;
 
@@ -674,7 +685,14 @@ fn test_trade() {
         "[Trade] Setup failed"
     );
     assert!(
-        prove_trade_bn254(path, attr.as_ptr(), &sk_s, &cm_old, nf.as_ptr(), LEN),
+        prove_trade_bn254(
+            path,
+            attr.as_ptr(),
+            sk_s_u64.as_ptr(),
+            cm_old_u64.as_ptr(),
+            nf.as_ptr(),
+            LEN
+        ),
         "[Trade] Proof generation failed"
     );
     assert!(verify_trade_bn254(path, LEN), "[Trade] Verification failed");

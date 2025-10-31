@@ -9,6 +9,7 @@ tradeRouter.post("/setup", expressAsyncHandler(setup));
 tradeRouter.post("/prove", expressAsyncHandler(prove));
 tradeRouter.post("/verify", expressAsyncHandler(verify));
 tradeRouter.post("/decrypt", expressAsyncHandler(decrypt));
+tradeRouter.post("/get/nf", expressAsyncHandler(nf));
 
 // 아래는 dat 파일을 json 형식으로 바꿔 Get-method 호출; 호출은 Rust library 내의 get-method 함수 정의됨
 tradeRouter.get("/get/ccvk", getCcVk);
@@ -72,6 +73,22 @@ async function verify(req, res) {
     TradeService.verify(50);
 
     res.json({ Verification: "Success" });
+}
+
+async function nf(req, res) {
+    const cmOldStr = req.body.cm_old;
+    const cm_old = new BigUint64Array(cmOldStr.map((x) => BigInt(x)));
+    const cmOldBuf = Buffer.from(cm_old.buffer);
+    const skSStr = req.body.sk_s;
+    const sk_s = new BigUint64Array(skSStr.map((x) => BigInt(x)));
+    const skSBuf = Buffer.from(sk_s.buffer);
+    const nfStr = req.body.nf;
+    const nf = new BigUint64Array(nfStr.map((x) => BigInt(x)));
+    const nfBuf = Buffer.from(nf.buffer);
+
+    TradeService.getNf(cmOldBuf, skSBuf, nfBuf);
+
+    res.json({ nf: nf });
 }
 
 async function decrypt(req, res) {

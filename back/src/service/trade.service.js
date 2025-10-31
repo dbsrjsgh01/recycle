@@ -31,6 +31,10 @@ function getLinkProof() {
     return formattedProof;
 }
 
+function getNf(cm_old, sk_s, nf) {
+    lib.get_nf(cm_old, sk_s, nf);
+}
+
 function setup(len, nf) {
     console.time("Setup");
     if (lib.setup_trade_bn254(param_path, len, nf) != true) {
@@ -72,6 +76,7 @@ const SnarkService = {
     getCcProof,
     getLinkVk,
     getLinkProof,
+    getNf,
     setup,
     prove,
     verify,

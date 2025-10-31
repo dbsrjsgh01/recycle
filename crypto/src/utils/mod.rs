@@ -15,8 +15,8 @@ use std::fs::File;
 pub mod mimc7;
 
 use crate::{
-    CC_PRF_FILE, CC_VK_FILE, LINK_PRF_FILE, LINK_VK_FILE, TRADE_CC_PRF_FILE, TRADE_CC_VK_FILE,
-    TRADE_LINK_PRF_FILE, TRADE_LINK_VK_FILE,
+    CC_PRF_FILE, CC_VK_FILE, CM_FILE, LINK_PRF_FILE, LINK_VK_FILE, TRADE_CC_PRF_FILE,
+    TRADE_CC_VK_FILE, TRADE_LINK_PRF_FILE, TRADE_LINK_VK_FILE,
 };
 
 pub fn path_from_c_str(ptr: *const c_char, log_prefix: &str) -> Option<&str> {
@@ -79,6 +79,14 @@ pub fn link_vk_from_file<E: Pairing>(vk_file_path: &str, mode: bool) -> String {
     link_vk_to_string::<E>(vk)
 }
 
+pub fn cm_from_file<E: Pairing>(cm_file_path: &str) -> String {
+    let cm_file = CM_FILE.as_str();
+    let raw_cm = get_file_as_byte_vec(&format!("{cm_file_path}{cm_file}"));
+    let cm = E::G1Affine::deserialize_compressed(raw_cm.as_slice()).unwrap();
+
+    cm_to_string::<E>(cm)
+}
+
 pub fn cc_proof_to_string<E: Pairing>(proof: Proof<E>) -> String {
     serde_json::json!({
         "a": format!("{:#?}", proof.a),
@@ -114,6 +122,13 @@ pub fn link_vk_to_string<E: Pairing>(vk: <LinkSnark<E> as Linker<E>>::VK) -> Str
     serde_json::json!({
         "c": format!("{:#?}", vk.c),
         "a": format!("{:#?}", vk.a),
+    })
+    .to_string()
+}
+
+pub fn cm_to_string<E: Pairing>(cm: E::G1Affine) -> String {
+    serde_json::json!({
+        "cm": format!("{:#?}", cm),
     })
     .to_string()
 }
