@@ -27,8 +27,9 @@ async function setup(req, res) {
     const condStr = req.body.cond;
     const cond = new BigUint64Array(condStr.map((x) => BigInt(x)));
     const condBuf = Buffer.from(cond.buffer);
+    const len = req.body.len;
 
-    DppService.setup(cond.length, condBuf);
+    DppService.setup(len, condBuf);
 
     res.json({
         Setup: true,
@@ -54,6 +55,8 @@ async function prove(req, res) {
     const cond = new BigUint64Array(condStr.map((x) => BigInt(x)));
     const condBuf = Buffer.from(cond.buffer);
 
+    const len = req.body.len;
+
     /**
      * Uint8Array는 UTF-8로 이루어져 있기에 string을 Number로 바로 바꿀 수 있습니다.
      *
@@ -63,15 +66,16 @@ async function prove(req, res) {
     const chk = new Uint8Array(chkStr.map((x) => Number(x)));
     const chkBuf = Buffer.from(chk.buffer);
 
-    DppService.prove(attrBuf, condBuf, chkBuf, attr.length);
+    DppService.prove(attrBuf, condBuf, chkBuf, len);
 
     res.json({ Prove: true });
 }
 
 async function verify(req, res) {
-    DppService.verify(50);
+    const len = req.body.len;
+    let result = DppService.verify(len);
 
-    res.json({ Verification: "Success" });
+    res.json({ Verification: result });
 }
 
 // http://localhost:3000/dpp/get/ccvk

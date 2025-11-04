@@ -160,8 +160,20 @@ pub extern "C" fn setup_dpp_bn254(
         Some(p) => p,
         None => return false,
     };
-    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
-    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+    // let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+    // let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+
+    let mut cond: Vec<F> = Vec::new();
+    for i in 0..len {
+        let mut cond_limbs: [u64; 4] = [0; 4];
+        unsafe {
+            std::ptr::copy_nonoverlapping(cond_buf.add(4 * i), cond_limbs.as_mut_ptr(), 4);
+        }
+        let cond_bigint = BigInt::<4>(cond_limbs);
+        cond.push(
+            F::from_bigint(cond_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+        );
+    }
 
     let circuit = DPPCircuit::<F>::mock(len, cond);
 
@@ -211,6 +223,7 @@ pub extern "C" fn prove_dpp_bn254(
     attr_buf: *const u64,
     cond_buf: *const u64,
     chk_buf: *const bool,
+    // enc_pp_recv:  // enc_pp_recv를 enc_pp, enc_pk로 묶어서 link_prove 사용
     len: usize,
 ) -> bool {
     let path = match utils::path_from_c_str(param_path, "[param_path]") {
@@ -220,13 +233,37 @@ pub extern "C" fn prove_dpp_bn254(
 
     let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
 
-    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
-    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+    // let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    // let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+
+    // let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+    // let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+
+    let mut attr: Vec<F> = Vec::new();
+    for i in 0..len {
+        let mut attr_limbs: [u64; 4] = [0; 4];
+        unsafe {
+            std::ptr::copy_nonoverlapping(attr_buf.add(4 * i), attr_limbs.as_mut_ptr(), 4);
+        }
+        let attr_bigint = BigInt::<4>(attr_limbs);
+        attr.push(
+            F::from_bigint(attr_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+        );
+    }
+
+    let mut cond: Vec<F> = Vec::new();
+    for i in 0..len {
+        let mut cond_limbs: [u64; 4] = [0; 4];
+        unsafe {
+            std::ptr::copy_nonoverlapping(cond_buf.add(4 * i), cond_limbs.as_mut_ptr(), 4);
+        }
+        let cond_bigint = BigInt::<4>(cond_limbs);
+        cond.push(
+            F::from_bigint(cond_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+        );
+    }
+
     let chk = unsafe { std::slice::from_raw_parts(chk_buf, len).to_vec() };
-
-    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
-    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
-
     let pp = PARAMS.lock().unwrap().clone();
 
     let circuit = DPPCircuit::<F>::new(attr.clone(), cond.clone(), chk, len);
@@ -297,8 +334,13 @@ pub extern "C" fn verify_dpp_bn254(param_path: *const c_char, len: usize) -> boo
 
     let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, link_cm);
 
-    CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap()
-        && LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf)
+    let snark_res = CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap();
+
+    let link_res = LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf);
+
+    println!("[Verify] SNARK: {}\tLink: {}", snark_res, link_res);
+
+    snark_res && link_res
 }
 
 #[unsafe(no_mangle)]
@@ -312,8 +354,12 @@ pub extern "C" fn setup_trade_bn254(
         None => return false,
     };
 
-    let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
-    let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
+    let mut nf_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(nf_buf, nf_limbs.as_mut_ptr(), 4);
+    }
+    let nf_bigint = BigInt::<4>(nf_limbs);
+    let nf = F::from_bigint(nf_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
     let circuit = TradeCircuit::<F>::mock(len, nf);
 
@@ -380,8 +426,20 @@ pub extern "C" fn prove_trade_bn254(
 
     let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
 
-    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
-    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+    // let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    // let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+
+    let mut attr: Vec<F> = Vec::new();
+    for i in 0..len {
+        let mut attr_limbs: [u64; 4] = [0; 4];
+        unsafe {
+            std::ptr::copy_nonoverlapping(attr_buf.add(4 * i), attr_limbs.as_mut_ptr(), 4);
+        }
+        let attr_bigint = BigInt::<4>(attr_limbs);
+        attr.push(
+            F::from_bigint(attr_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+        );
+    }
 
     let mut sk_s_limbs: [u64; 4] = [0; 4];
     unsafe {
@@ -621,8 +679,25 @@ fn test_dpp() {
     let path = c_path.as_ptr();
     const LEN: usize = 50;
 
-    let attr = vec![2u64; LEN];
-    let cond = vec![1u64; LEN];
+    // let attr = vec![2u64; LEN];
+    // let cond = vec![1u64; LEN];
+
+    let mut attr = Vec::new();
+    let attr_i = vec![2u64, 0u64, 0u64, 0u64];
+    for _ in 0..LEN {
+        attr.extend(&attr_i);
+    }
+
+    let mut cond = Vec::new();
+    let cond_i = vec![1u64, 0u64, 0u64, 0u64];
+    for _ in 0..LEN / 2 {
+        cond.extend(&cond_i);
+    }
+    let cond_i = vec![3u64, 0u64, 0u64, 0u64];
+    for _ in 0..LEN / 2 {
+        cond.extend(&cond_i);
+    }
+
     let mut chk1 = vec![true; LEN / 2];
     chk1.extend_from_slice(&[false; LEN / 2]);
 
@@ -662,7 +737,11 @@ fn test_trade() {
     let path = c_path.as_ptr();
     const LEN: usize = 50;
 
-    let attr = vec![2u64; LEN];
+    let mut attr = Vec::new();
+    let attr_i = vec![2u64, 0u64, 0u64, 0u64];
+    for _ in 0..LEN {
+        attr.extend(&attr_i);
+    }
     let mut cm_old_u64: [u64; 4] = [0; 4];
     let mut sk_s_u64: [u64; 4] = [0; 4];
     get_random_values(cm_old_u64.as_mut_ptr());
@@ -740,99 +819,4 @@ fn format_over_bn254() {
     println!("[Val] {:#?}", test_val);
     let formatted_val = format_fr(test_val.as_mut_ptr());
     println!("[Val] {:#?}", test_val);
-}
-
-// TEST
-#[unsafe(no_mangle)]
-pub extern "C" fn trade_cc_snark_check(
-    attr_buf: *const u64,
-    sk_s_buf: *const u64,
-    cm_old_buf: *const u64,
-    nf_buf: *const u64,
-    len: usize,
-) -> bool {
-    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
-    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
-
-    let sk_s_val = unsafe { *sk_s_buf };
-    let sk_s = F::from(sk_s_val);
-
-    let cm_old_val = unsafe { *cm_old_buf };
-    let cm_old = F::from(cm_old_val);
-
-    let nf_val = unsafe { <&[u64; 4]>::try_from(std::slice::from_raw_parts(nf_buf, 4)).unwrap() };
-    let nf = F::from_bigint(BigInteger256::new(*nf_val)).unwrap();
-
-    let pp = TRADE_PARAMS.lock().unwrap().clone();
-
-    let cc_vk = TRADE_CC_VK.lock().unwrap().clone();
-
-    let pvk = prepare_verifying_key(&cc_vk);
-
-    let cc_prf = TRADE_CC_PRF.lock().unwrap().clone();
-
-    let ct = TRADE_CT.lock().unwrap().clone();
-
-    let link_vk = TRADE_LINK_VK.lock().unwrap().clone();
-
-    let link_prf = TRADE_LINK_PRF.lock().unwrap().clone();
-
-    let link_cm = TRADE_LINK_CM.lock().unwrap().clone();
-
-    // 1. Check the consistency of cc_snark commitment
-    // committed value: attr
-    let attr_assignment = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
-    let v_eta_gamma_inv = pp.cc_pk.vk.eta_gamma_inv_g1.into_group() * cc_prf.open;
-    let gamma_abc_inputs_acc_without_one =
-        <E as Pairing>::G1::msm_bigint(&pp.cc_pk.vk.gamma_abc_g1[1..], &attr_assignment.clone());
-    let g_cm: <E as Pairing>::G1Affine =
-        (v_eta_gamma_inv + gamma_abc_inputs_acc_without_one).into();
-    println!("[Original] {:#?}", cc_prf.cm.clone());
-    println!("[Computed] {:#?}", g_cm);
-    assert_eq!(g_cm, cc_prf.cm.clone(), "[ccSNARK] commitment check failed");
-
-    // 2. Check the consistency of cc_snark proof
-    // variable check
-    println!("[PRF] {:#?}", cc_prf);
-
-    let qap = E::multi_miller_loop(
-        [
-            <<E as Pairing>::G1Affine as Into<<E as Pairing>::G1Prepared>>::into(cc_prf.a),
-            <<E as Pairing>::G1Affine as Into<<E as Pairing>::G1Prepared>>::into(
-                (cc_prf.cm + pvk.vk.gamma_abc_g1[0]).into_affine(),
-            ),
-            cc_prf.c.into(),
-        ],
-        [
-            cc_prf.b.into(),
-            pvk.gamma_g2_neg_pc.clone(),
-            pvk.delta_g2_neg_pc.clone(),
-        ],
-    );
-    let test = <E as Pairing>::final_exponentiation(qap).ok_or(SynthesisError::UnexpectedIdentity);
-    let computed_result = test.unwrap().0 == pvk.alpha_g1_beta_g2;
-    println!("[ccSNARK] Verification: {}", computed_result);
-
-    let cc_result = CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap();
-    println!("[ccSNARK] Verification: {}", cc_result);
-
-    // ABC check
-
-    // verification test
-
-    // 3. Check circuit satisfiability
-    use ark_relations::r1cs::ConstraintSynthesizer;
-    println!("[Input] attr:   {:#?}", attr);
-    println!("[Input] sk_s:   {:#?}", sk_s);
-    println!("[Input] cm_old: {:#?}", cm_old);
-    println!("[Input] nf:     {:#?}", nf);
-    let circuit =
-        crate::encryption::trade_circuit::TradeCircuit::<F>::new(attr, sk_s, cm_old, nf, 50);
-    let cs = ark_relations::r1cs::ConstraintSystem::new_ref();
-
-    circuit.clone().generate_constraints(cs.clone()).unwrap();
-    let sat = cs.is_satisfied().unwrap();
-    println!("[Circuit Satisfiability] {:#?}", sat);
-
-    true
 }

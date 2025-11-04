@@ -1,6 +1,6 @@
 back/node_modules
 back/test/*
-crypto/target
+target
 crypto/Cargo.lock
 crypto/params/*
 crypto/bench/*

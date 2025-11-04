@@ -64,15 +64,19 @@ async function prove(req, res) {
     const nf = new BigUint64Array(nfStr.map((x) => BigInt(x)));
     const nfBuf = Buffer.from(nf.buffer);
 
-    TradeService.prove(attrBuf, skSBuf, cmOldBuf, nfBuf, 50);
+    const len = req.body.len;
+
+    TradeService.prove(attrBuf, skSBuf, cmOldBuf, nfBuf, len);
 
     res.json({ Prove: true });
 }
 
 async function verify(req, res) {
-    TradeService.verify(50);
+    const len = req.body.len;
 
-    res.json({ Verification: "Success" });
+    let result = TradeService.verify(len);
+
+    res.json({ Verification: result });
 }
 
 async function nf(req, res) {

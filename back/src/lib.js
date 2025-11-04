@@ -54,12 +54,6 @@ const lib = ffi.Library(
 
         // formatting unbounded u64 array into modulus number
         format_fr: ["void", [frArray]],
-
-        // TEST
-        trade_cc_snark_check: [
-            "bool",
-            [frArray, frArray, frArray, frArray, "int"],
-        ],
     }
 );
 

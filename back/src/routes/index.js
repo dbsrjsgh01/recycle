@@ -2,19 +2,26 @@ import express from "express";
 import dppRouter from "./dpp.router.js";
 import tradeRouter from "./trade.router.js";
 import lib from "../lib.js";
-import crypto from "crypto";
 
 const rootRouter = express();
 rootRouter.use("/dpp", dppRouter);
 rootRouter.use("/trade", tradeRouter);
 
 // DEFINE TEST VARIABLES AND FETCH
-
-// ========= DPP variables =========
-let attr = new BigUint64Array(50).fill(2n); // BigInteger
-let cond = new BigUint64Array(50).fill(1n);
-let chk = new Uint8Array(50).fill(1);
+const attrLen = 50;
+// ========== DPP variables ==========
+let attr = new BigUint64Array(attrLen * 4).fill(0n); // BigInteger
+let cond = new BigUint64Array(attrLen * 4).fill(0n);
+let chk = new Uint8Array(attrLen).fill(1);
 chk.set(new Uint8Array(25).fill(0), 25);
+
+// ============== Test ==============
+for (let i = 0; i < attrLen / 2; i++) {
+    attr[4 * i] = BigInt(i);
+}
+for (let i  = attrLen / 2 ; i < attrLen; i++) {
+    cond[4 * i] = BigInt(i);
+}
 
 // ========= Trade variables =========
 let sk_s = new BigUint64Array(4);
@@ -52,7 +59,7 @@ rootRouter.get("/setup", async (req, res) => {
     const resDpp = await fetch("http://localhost:3000/dpp/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cond: condStr }),
+        body: JSON.stringify({ cond: condStr, len: attrLen }),
     });
 
     // (DPP 서킷) 결과 확인 용
@@ -60,13 +67,12 @@ rootRouter.get("/setup", async (req, res) => {
 
     // (거래 서킷) 공개 파라미터 생성 요청, nf는 (조건값) 공개 입력값
     const nfStr = Array.from(nf, (x) => x.toString());
-    const len = attr.length;
 
     // (거래 서킷) 결과 확인 용
     const resTrade = await fetch("http://localhost:3000/trade/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nf: nfStr, len: len }),
+        body: JSON.stringify({ nf: nfStr, len: attrLen }),
     });
 
     const resultTrade = await resTrade.json();
@@ -99,14 +105,21 @@ rootRouter.get("/prove-dpp", async (req, res) => {
     const resDppProve = await fetch("http://localhost:3000/dpp/prove", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attr: attrStr, cond: condStr, chk: chkStr }),
+        body: JSON.stringify({ attr: attrStr, cond: condStr, chk: chkStr, len: attrLen }),
     });
 
     // (DPP 서킷) 증명 결과 확인용
     const resultDppProve = await resDppProve.json();
 
+    let testVal = [];
+    for (let i = 0; i < attrLen; i++) {
+        let attrVal = [attrStr[4*i], attrStr[4*i+1], attrStr[4*i+2], attrStr[4*i+3]];
+        let condVal = [condStr[4*i], condStr[4*i+1], condStr[4*i+2], condStr[4*i+3]];
+        testVal.push(...[attrVal, condVal, chk[i]]);
+    }
+
     console.log(resultDppProve);
-    res.json({ "Prove Status": resultDppProve });
+    res.json({ "Prove Status": resultDppProve, "Test Values": testVal });
 });
 
 /**
@@ -139,6 +152,7 @@ rootRouter.get("/prove-trade", async (req, res) => {
             sk_s: skSStr,
             cm_old: cmOldStr,
             nf: nfStr,
+            len: attrLen,
         }),
     });
 
@@ -152,6 +166,10 @@ rootRouter.get("/prove-trade", async (req, res) => {
 rootRouter.get("/verify-dpp", async (req, res) => {
     const resDppVerify = await fetch ("http://localhost:3000/dpp/verify", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            len: attrLen,
+        }),
     });
 
     const resultDppVerify = await resDppVerify.json();
@@ -163,19 +181,16 @@ rootRouter.get("/verify-dpp", async (req, res) => {
 rootRouter.get("/verify-trade", async (req, res) => {
     const resTradeVerify = await fetch ("http://localhost:3000/trade/verify", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            len: attrLen,
+        }),
     });
 
     const resultTradeVerify = await resTradeVerify.json();
 
     console.log(resultTradeVerify);
     res.json({ "Verification": resultTradeVerify});
-})
-
-// TEST
-rootRouter.get("/test", (req, res) => {
-    let attrBuf = Buffer.from(attr.buffer);
-    lib.trade_cc_snark_check(attrBuf, skSBuf, cmOldBuf, nfBuf, 50);
-    res.json({Test: "None"});
 })
 
 rootRouter.get("/decrypt", async (req, res) => {

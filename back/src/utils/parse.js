@@ -34,6 +34,8 @@ async function getParamArray(type) {
                 paramStrArr.push(...item);
             });
         });
+    } else if (type === "dec_msg") {
+        
     }
     return paramStrArr.map((item) => item.toString());
 }
@@ -99,12 +101,26 @@ function parseAndFormatG2Value(value) {
     return formattedValue;
 }
 
+function parseAndFormatFrValue(value) {
+    const regex = /\d/g;
+    const matches = Array.from(value.matchAll(regex));
+
+    let formattedValue = [];
+
+    for (const match of matches) {
+        formattedValue.push(BigInt(match.trim()).toString());
+    }
+
+    return formattedValue;
+}
+
 const Parse = {
     toVkParam,
     toProofParam,
     parseDataFromJsonArr,
     parseAndFormatG1Value,
     parseAndFormatG2Value,
+    parseAndFormatFrValue,
 };
 
 export default Parse;

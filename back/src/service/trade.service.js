@@ -59,14 +59,17 @@ function prove(attr, sk_s, cm_old, nf, len) {
 
 function verify(len) {
     console.time("Verify");
-    lib.verify_trade_bn254(param_path, len);
+    let result = lib.verify_trade_bn254(param_path, len);
     console.timeEnd("Verify");
+
+    return result;
 }
 
 function decrypt() {
     console.time("Decrypt");
     let dec_msg = lib.decrypt_trade_bn254();
     console.timeEnd("Decrypt");
+    let formattedJson = Format.dec_msg(dec_msg);
     return dec_msg;
 }
 

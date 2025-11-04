@@ -53,8 +53,10 @@ function prove(attr, cond, chk, len) {
 
 function verify(len) {
     console.time("Verify");
-    lib.verify_dpp_bn254(param_path, len);
+    let result = lib.verify_dpp_bn254(param_path, len);
     console.timeEnd("Verify");
+
+    return result;
 }
 
 const DppService = {

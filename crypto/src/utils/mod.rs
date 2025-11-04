@@ -134,6 +134,7 @@ pub fn cm_to_string<E: Pairing>(cm: E::G1Affine) -> String {
 }
 
 pub fn dec_msg_to_string<E: Pairing>(dec_msg: <ElGamal<E> as CCEnc<E>>::Plaintext) -> String {
+    println!("[PT] {:#?}", dec_msg);
     let mut dec_msg_bigint = Vec::new();
 
     for m_i in dec_msg.msg {
@@ -141,10 +142,8 @@ pub fn dec_msg_to_string<E: Pairing>(dec_msg: <ElGamal<E> as CCEnc<E>>::Plaintex
     }
     println!("[Converted] {:#?}", dec_msg_bigint);
 
-    serde_json::json!({
-        "msg": format!("{:#?}", dec_msg_bigint),
-    })
-    .to_string()
+    // serde_json::json!([format!("{:#?}", dec_msg_bigint)]).to_string()
+    serde_json::json!({"msg": format!("{:#?}", dec_msg_bigint)}).to_string()
 }
 
 pub fn string_from_ptr(ptr: *const c_char) -> String {

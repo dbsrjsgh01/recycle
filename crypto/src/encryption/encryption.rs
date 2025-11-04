@@ -174,9 +174,9 @@ impl<E: Pairing> CCEnc<E> for ElGamal<E> {
             let ct0: E::G1Affine = ct[0];
             let ct1: E::G1Affine = ct[1];
             let res = ct1 + -(ct0 * sk.sk);
-            for i in 0..(1 << 8) {
-                // |M| = 8bit
-                let fr_i = E::ScalarField::from_bigint((i as u8).into()).unwrap();
+            for i in 0..=u64::MAX {
+                // |M| = 64 bit
+                let fr_i = E::ScalarField::from_bigint((i as u64).into()).unwrap();
                 if pp.generator.mul(fr_i).eq(&res) == true {
                     msg_vec.push(fr_i);
                     break;
