@@ -15,6 +15,7 @@ dppRouter.get("/get/ccvk", getCcVk);
 dppRouter.get("/get/ccprf", getCcProof);
 dppRouter.get("/get/linkvk", getLinkVk);
 dppRouter.get("/get/linkprf", getLinkProof);
+dppRouter.get("/get/cm", getCm);
 
 async function setup(req, res) {
     /**
@@ -101,6 +102,12 @@ function getLinkVk(req, res) {
 function getLinkProof(req, res) {
     const proofJson = DppService.getLinkProof();
     res.json(proofJson);
+}
+
+// http://localhost:10801/dpp/get/cm
+function getCm(req, res) {
+    const cmJson = DppService.getCm();
+    res.json(cmJson);
 }
 
 export default dppRouter;

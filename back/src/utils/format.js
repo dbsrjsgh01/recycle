@@ -65,6 +65,19 @@ function link_proof(proofJson) {
     return formattedProof;
 }
 
+function cm(cmJson) {
+    const formattedCm = {};
+    
+    for (const key in cmJson) {
+        if (cmJson.hasOwnProperty(key)) {
+            const value = cmJson[key];
+            formattedCm[key] = Parse.parseAndFormatG1Value(value);
+        }
+    }
+
+    return formattedCm;
+}
+
 function dec_msg(msgJson) {
     const formattedMsg = {};
 
@@ -111,6 +124,7 @@ const Format = {
     cc_proof,
     link_vk,
     link_proof,
+    cm,
     dec_msg,
     strToBigInt,
     bigIntToStr,

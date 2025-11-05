@@ -31,6 +31,13 @@ function getLinkProof() {
     return formattedProof;
 }
 
+function getCm() {
+    const cmJson = JSON.parse(lib.get_cm_bn254(param_path));
+    const formattedCm = Format.cm(cmJson);
+
+    return formattedCm;
+}
+
 function setup(len, cond) {
     console.time("Setup");
     if (lib.setup_dpp_bn254(param_path, len, cond) != true) {
@@ -65,6 +72,7 @@ const DppService = {
     getCcProof,
     getLinkVk,
     getLinkProof,
+    getCm,
     setup,
     prove,
     verify,
