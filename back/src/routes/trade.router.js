@@ -71,16 +71,18 @@ async function prove(req, res) {
     const nfBuf = Buffer.from(nf.buffer);
 
     const len = req.body.len;
+    const isLatest = req.body.isLatest;
 
-    TradeService.prove(attrBuf, skSBuf, cmOldXBuf, cmOldYBuf, nfBuf, len);
+    TradeService.prove(attrBuf, skSBuf, cmOldXBuf, cmOldYBuf, nfBuf, len, isLatest);
 
     res.json({ Prove: true });
 }
 
 async function verify(req, res) {
     const len = req.body.len;
+    const isLatest = req.body.isLatest;
 
-    let result = TradeService.verify(len);
+    let result = TradeService.verify(len, isLatest);
 
     res.json({ Verification: result });
 }
@@ -107,7 +109,9 @@ async function nf(req, res) {
 }
 
 async function decrypt(req, res) {
-    let dec_msg = TradeService.decrypt();
+    const isLatest = req.body.isLatest;
+
+    let dec_msg = TradeService.decrypt(isLatest);
 
     res.json({ Decryption: "Success", MSG: dec_msg });
 }

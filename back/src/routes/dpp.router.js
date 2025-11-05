@@ -30,8 +30,9 @@ async function setup(req, res) {
     const cond = new BigUint64Array(condStr.map((x) => Format.strToBigInt(x)));
     const condBuf = Buffer.from(cond.buffer);
     const len = req.body.len;
+    const isEq = req.body.isEq;
 
-    DppService.setup(len, condBuf);
+    DppService.setup(len, condBuf, isEq);
 
     res.json({
         Setup: true,
@@ -68,14 +69,19 @@ async function prove(req, res) {
     const chk = new Uint8Array(chkStr.map((x) => Number(x)));
     const chkBuf = Buffer.from(chk.buffer);
 
-    DppService.prove(attrBuf, condBuf, chkBuf, len);
+    const isLatest = req.body.isLatest;
+    const isEq = req.body.isEq;
+
+    DppService.prove(attrBuf, condBuf, chkBuf, len, isLatest, isEq);
 
     res.json({ Prove: true });
 }
 
 async function verify(req, res) {
     const len = req.body.len;
-    let result = DppService.verify(len);
+    const isLatest = req.body.isLatest;
+
+    let result = DppService.verify(len, isLatest);
 
     res.json({ Verification: result });
 }

@@ -26,8 +26,24 @@ const lib = ffi.Library(
             "bool",
             ["string", frArray, frArray, boolArray, "int"],
         ],
+        prove_dpp_bn254_latest: [
+            "bool",
+            ["string", frArray, frArray, boolArray, "int"],
+        ],
+        // setup_dpp_ge_bn254(param_path, Length, cond) -> bool
+        setup_dpp_ge_bn254: ["bool", ["string", "int", frArray]],
+        // prove_dpp_ge_bn254(param_path, attr, cond, chk, Length) -> bool
+        prove_dpp_ge_bn254: [
+            "bool",
+            ["string", frArray, frArray, boolArray, "int"],
+        ],
+        prove_dpp_ge_bn254_latest: [
+            "bool",
+            ["string", frArray, frArray, boolArray, "int"],
+        ],
         // verify_dpp_bn254(param_path, cond, Length) -> bool
         verify_dpp_bn254: ["bool", ["string", "int"]],
+        verify_dpp_bn254_latest: ["bool", ["string", "int"]],
 
         // setup_trade_bn254(param_path, Length, nf) -> bool
         setup_trade_bn254: ["bool", ["string", "int", frArray]],
@@ -36,10 +52,16 @@ const lib = ffi.Library(
             "bool",
             ["string", frArray, frArray, frArray, frArray, frArray, "int"],
         ],
+        prove_trade_bn254_latest: [
+            "bool",
+            ["string", frArray, frArray, frArray, frArray, frArray, "int"],
+        ],
         // verify_trade_bn254(param_path, Length) -> bool
         verify_trade_bn254: ["bool", ["string", "int"]],
+        verify_trade_bn254_latest: ["bool", ["string", "int"]],
         // decrypt_trade_bn254(param_path) -> bool
         decrypt_trade_bn254: ["string", ["string"]],
+        decrypt_trade_bn254_latest: ["string", ["string"]],
 
         // get_*_bn254(param_path, boolean) -> string (true => values related to trade / false => values related to dpp)
         get_cc_vk_bn254: ["string", ["string", "bool"]],

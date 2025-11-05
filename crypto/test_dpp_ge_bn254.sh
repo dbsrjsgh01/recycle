@@ -1,6 +1,6 @@
-#!/bin/zsh
+#!/bin/bash
 
-filename="./bench/log.txt"
+filename="./bench/dpp_circuit_log.txt"
 
 "" > "$filename"
 

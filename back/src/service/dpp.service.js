@@ -1,7 +1,8 @@
 import lib from "../lib.js";
 import Format from "../utils/format.js";
 
-const param_path = "test/";
+let stamp = 0;
+let param_path = "";
 
 function getCcVk() {
     const vkJson = JSON.parse(lib.get_cc_vk_bn254(param_path, false));
@@ -38,9 +39,18 @@ function getCm() {
     return formattedCm;
 }
 
-function setup(len, cond) {
+function setup(len, cond, isEq) {
+    stamp = +new Date();
+    param_path = Format.path(stamp.toString());
     console.time("Setup");
-    if (lib.setup_dpp_bn254(param_path, len, cond) != true) {
+    let isSet = true;
+    if (isEq == true) {
+        isSet = lib.setup_dpp_bn254(param_path, len, cond);
+    } else {
+        isSet = lib.setup_dpp_ge_bn254(param_path, len, cond);
+    }
+
+    if (isSet != true) {
         throw new Error("Setup failed");
     } else {
         console.log("Setup succeeded");
@@ -48,19 +58,57 @@ function setup(len, cond) {
     console.timeEnd("Setup");
 }
 
-function prove(attr, cond, chk, len) {
+function eqProve(attr, cond, chk, len, isLatest) {
     console.time("Prove");
-    if (lib.prove_dpp_bn254(param_path, attr, cond, chk, len) != true) {
+    let isProven = true;
+    if (isLatest == true) {
+        isProven = lib.prove_dpp_bn254_latest(param_path, attr, cond, chk, len);
+    } 
+    else {
+        isProven = lib.prove_dpp_bn254(param_path, attr, cond, chk, len);
+    }
+    return isProven;
+}
+
+function geProve(attr, cond, chk, len, isLatest) {
+    console.time("Prove");
+    let isProven = true;
+    if (isLatest == true) {
+        isProven = lib.prove_dpp_ge_bn254_latest(param_path, attr, cond, chk, len);
+    } 
+    else {
+        isProven = lib.prove_dpp_ge_bn254(param_path, attr, cond, chk, len);
+    }
+    return isProven;
+}
+
+function prove(attr, cond, chk, len, isLatest, isEq) {
+    console.time("Prove");
+    let isProven = true;
+    if (isEq == true) {
+        isProven = eqProve(attr, cond, chk, len, isLatest);
+    } 
+    else {
+        isProven = geProve(attr, cond, chk, len, isLatest);
+    }
+
+    if (isProven != true) {
         throw new Error("Failed to generate proof");
     } else {
         console.log("Proof generation succeeded");
     }
+
     console.timeEnd("Prove");
 }
 
-function verify(len) {
+function verify(len, isLatest) {
     console.time("Verify");
-    let result = lib.verify_dpp_bn254(param_path, len);
+    let result = true;
+    if (isLatest == true) {
+        result = lib.verify_dpp_bn254_latest(param_path, len);
+    } else {
+        result = lib.verify_dpp_bn254(param_path, len);
+    }
     console.timeEnd("Verify");
 
     return result;

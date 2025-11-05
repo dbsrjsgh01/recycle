@@ -9,7 +9,8 @@
 )]
 
 pub mod cc_snark;
-pub mod dpp_circuit;
+pub mod dpp_eq_circuit;
+pub mod dpp_ge_circuit;
 pub mod encryption;
 pub mod linker;
 pub mod utils;
@@ -35,7 +36,8 @@ extern crate ark_std;
 #[macro_use]
 extern crate derivative;
 
-use crate::dpp_circuit::DPPCircuit;
+use crate::dpp_eq_circuit::DPPEqCircuit;
+use crate::dpp_ge_circuit::DPPCircuit;
 use crate::encryption::cc_enc::CCEnc;
 use crate::encryption::encryption::{ElGamal, Plaintext};
 use crate::encryption::trade_circuit::TradeCircuit;
@@ -120,17 +122,17 @@ lazy_static! {
     pub static ref LINK_VK_FILE: String = "dpp.link_vk.dat".to_string();
     pub static ref LINK_PRF_FILE: String = "dpp.link_proof.dat".to_string();
     pub static ref LINK_CM_FILE: String = "dpp.link_cm.dat".to_string();
-    // static ref PARAMS: Mutex<PP<E>> = Mutex::new(PP::<E>::default());
-    // static ref CC_VK: Mutex<VerifyingKey<E>> = Mutex::new(VerifyingKey::default());
-    // static ref CC_PRF: Mutex<Proof<E>> = Mutex::new(Proof::default());
-    // static ref CM: Mutex<<E as Pairing>::G1Affine> =
-    //     Mutex::new(<E as Pairing>::G1Affine::default());
-    // static ref LINK_VK: Mutex<<LinkSnark<E> as Linker<E>>::VK> =
-    //     Mutex::new(<LinkSnark<E> as Linker<E>>::VK::default());
-    // static ref LINK_PRF: Mutex<<LinkSnark<E> as Linker<E>>::Proof> =
-    //     Mutex::new(<LinkSnark<E> as Linker<E>>::Proof::default());
-    // static ref LINK_CM: Mutex<<LinkSnark<E> as Linker<E>>::CM> =
-    //     Mutex::new(<LinkSnark<E> as Linker<E>>::CM::default());
+    static ref PARAMS: Mutex<PP<E>> = Mutex::new(PP::<E>::default());
+    static ref CC_VK: Mutex<VerifyingKey<E>> = Mutex::new(VerifyingKey::default());
+    static ref CC_PRF: Mutex<Proof<E>> = Mutex::new(Proof::default());
+    static ref CM: Mutex<<E as Pairing>::G1Affine> =
+        Mutex::new(<E as Pairing>::G1Affine::default());
+    static ref LINK_VK: Mutex<<LinkSnark<E> as Linker<E>>::VK> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::VK::default());
+    static ref LINK_PRF: Mutex<<LinkSnark<E> as Linker<E>>::Proof> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::Proof::default());
+    static ref LINK_CM: Mutex<<LinkSnark<E> as Linker<E>>::CM> =
+        Mutex::new(<LinkSnark<E> as Linker<E>>::CM::default());
 
     // TRADE
     pub static ref TRADE_PP_FILE: String = "trade.pp.dat".to_string();
@@ -157,6 +159,239 @@ lazy_static! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn setup_dpp_bn254(
+    param_path: *const c_char,
+    len: usize,
+    cond_buf: *const u64,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+
+    // let mut cond: Vec<F> = Vec::new();
+    // for i in 0..len {
+    //     let mut cond_limbs: [u64; 4] = [0; 4];
+    //     unsafe {
+    //         std::ptr::copy_nonoverlapping(cond_buf.add(4 * i), cond_limbs.as_mut_ptr(), 4);
+    //     }
+    //     let cond_bigint = BigInt::<4>(cond_limbs);
+    //     cond.push(
+    //         F::from_bigint(cond_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+    //     );
+    // }
+
+    let circuit = DPPEqCircuit::<F>::mock(len, cond);
+
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+    let (cc_pk, cc_vk) = CcGroth16::<E>::circuit_specific_setup(circuit, &mut rng).unwrap();
+
+    let mut ck = Vec::new();
+
+    for _ in 0..len + 1 {
+        ck.push(<E as Pairing>::G1Affine::rand(&mut rng));
+    }
+
+    let (link_pp, link_crs) =
+        LinkSnark::<E>::setup(&mut rng, len, ck.clone(), cc_pk.clone().ck, "dpp");
+    let (link_pk, link_vk) = LinkSnark::<E>::keygen(&mut rng, &link_pp, link_crs);
+
+    let pp = PP {
+        cc_pk,
+        link_pp,
+        link_pk,
+        ck,
+    };
+    let mut pp_bytes = Vec::new();
+    pp.serialize_compressed(&mut pp_bytes).unwrap();
+    let pp_file = PP_FILE.as_str();
+    fs::write(format!("{path}{pp_file}"), pp_bytes).unwrap();
+
+    let mut cc_vk_bytes = Vec::new();
+    cc_vk.serialize_compressed(&mut cc_vk_bytes).unwrap();
+    let cc_vk_file = CC_VK_FILE.as_str();
+    fs::write(format!("{path}{cc_vk_file}"), cc_vk_bytes).unwrap();
+
+    let mut link_vk_bytes = Vec::new();
+    link_vk.serialize_compressed(&mut link_vk_bytes).unwrap();
+    let link_vk_file = LINK_VK_FILE.as_str();
+    fs::write(format!("{path}{link_vk_file}"), link_vk_bytes).unwrap();
+
+    let mut _pp = PARAMS.lock().unwrap();
+    *_pp = pp;
+
+    let mut _cc_vk = CC_VK.lock().unwrap();
+    *_cc_vk = cc_vk;
+
+    let mut _link_vk = LINK_VK.lock().unwrap();
+    *_link_vk = link_vk;
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn prove_dpp_bn254(
+    param_path: *const c_char,
+    attr_buf: *const u64,
+    cond_buf: *const u64,
+    chk_buf: *const bool,
+    len: usize,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+
+    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+
+    // let mut attr: Vec<F> = Vec::new();
+    // for i in 0..len {
+    //     let mut attr_limbs: [u64; 4] = [0; 4];
+    //     unsafe {
+    //         std::ptr::copy_nonoverlapping(attr_buf.add(4 * i), attr_limbs.as_mut_ptr(), 4);
+    //     }
+    //     let attr_bigint = BigInt::<4>(attr_limbs);
+    //     attr.push(
+    //         F::from_bigint(attr_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+    //     );
+    // }
+
+    // let mut cond: Vec<F> = Vec::new();
+    // for i in 0..len {
+    //     let mut cond_limbs: [u64; 4] = [0; 4];
+    //     unsafe {
+    //         std::ptr::copy_nonoverlapping(cond_buf.add(4 * i), cond_limbs.as_mut_ptr(), 4);
+    //     }
+    //     let cond_bigint = BigInt::<4>(cond_limbs);
+    //     cond.push(
+    //         F::from_bigint(cond_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
+    //     );
+    // }
+
+    let chk = unsafe { std::slice::from_raw_parts(chk_buf, len).to_vec() };
+
+    // let pp = PARAMS.lock().unwrap().clone();
+    let pp_file = PP_FILE.as_str();
+    let raw_pp = get_file_as_byte_vec(&format!("{path}{pp_file}"));
+    let pp = PP::<E>::deserialize_compressed(raw_pp.as_slice()).unwrap();
+
+    let circuit = DPPEqCircuit::<F>::new(attr.clone(), cond.clone(), chk, len);
+
+    let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
+
+    let o = <E as Pairing>::ScalarField::rand(&mut rng);
+    let attr_repr = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    let cm_proj = <E as Pairing>::G1::msm_bigint(&pp.ck[1..], &attr_repr);
+    let cm: <E as Pairing>::G1Affine = (cm_proj + pp.ck[0].into_group() * o.clone()).into();
+
+    let link_witness = LinkSnark::<E>::generate_witness(vec![o], attr, vec![cc_prf.clone().open]);
+    let (link_prf, link_cm_aux) =
+        LinkSnark::<E>::prove(&mut rng, &pp.link_pp, &pp.link_pk, &link_witness);
+
+    let mut cc_prf_byte = Vec::new();
+    cc_prf.serialize_compressed(&mut cc_prf_byte).unwrap();
+    let cc_prf_file = CC_PRF_FILE.as_str();
+    fs::write(format!("{path}{cc_prf_file}"), cc_prf_byte).unwrap();
+
+    let mut link_prf_byte = Vec::new();
+    link_prf.serialize_compressed(&mut link_prf_byte).unwrap();
+    let link_prf_file = LINK_PRF_FILE.as_str();
+    fs::write(format!("{path}{link_prf_file}"), link_prf_byte).unwrap();
+
+    let mut cm_byte = Vec::new();
+    cm.serialize_compressed(&mut cm_byte).unwrap();
+    let cm_file = CM_FILE.as_str();
+    fs::write(format!("{path}{cm_file}"), cm_byte).unwrap();
+
+    let mut link_cm_byte = Vec::new();
+    link_cm_aux.serialize_compressed(&mut link_cm_byte).unwrap();
+    let link_cm_file = LINK_CM_FILE.as_str();
+    fs::write(format!("{path}{link_cm_file}"), link_cm_byte).unwrap();
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn prove_dpp_bn254_latest(
+    param_path: *const c_char,
+    attr_buf: *const u64,
+    cond_buf: *const u64,
+    chk_buf: *const bool,
+    len: usize,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+
+    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+    let chk = unsafe { std::slice::from_raw_parts(chk_buf, len).to_vec() };
+
+    let pp = PARAMS.lock().unwrap().clone();
+
+    let circuit = DPPEqCircuit::<F>::new(attr.clone(), cond.clone(), chk, len);
+
+    let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
+
+    let o = <E as Pairing>::ScalarField::rand(&mut rng);
+    let attr_repr = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    let cm_proj = <E as Pairing>::G1::msm_bigint(&pp.ck[1..], &attr_repr);
+    let cm: <E as Pairing>::G1Affine = (cm_proj + pp.ck[0].into_group() * o.clone()).into();
+
+    let link_witness = LinkSnark::<E>::generate_witness(vec![o], attr, vec![cc_prf.clone().open]);
+    let (link_prf, link_cm_aux) =
+        LinkSnark::<E>::prove(&mut rng, &pp.link_pp, &pp.link_pk, &link_witness);
+
+    let mut cc_prf_byte = Vec::new();
+    cc_prf.serialize_compressed(&mut cc_prf_byte).unwrap();
+    let cc_prf_file = CC_PRF_FILE.as_str();
+    fs::write(format!("{path}{cc_prf_file}"), cc_prf_byte).unwrap();
+
+    let mut link_prf_byte = Vec::new();
+    link_prf.serialize_compressed(&mut link_prf_byte).unwrap();
+    let link_prf_file = LINK_PRF_FILE.as_str();
+    fs::write(format!("{path}{link_prf_file}"), link_prf_byte).unwrap();
+
+    let mut cm_byte = Vec::new();
+    cm.serialize_compressed(&mut cm_byte).unwrap();
+    let cm_file = CM_FILE.as_str();
+    fs::write(format!("{path}{cm_file}"), cm_byte).unwrap();
+
+    let mut link_cm_byte = Vec::new();
+    link_cm_aux.serialize_compressed(&mut link_cm_byte).unwrap();
+    let link_cm_file = LINK_CM_FILE.as_str();
+    fs::write(format!("{path}{link_cm_file}"), link_cm_byte).unwrap();
+
+    let mut _cm = CM.lock().unwrap();
+    *_cm = cm;
+
+    let mut _cc_prf = CC_PRF.lock().unwrap();
+    *_cc_prf = cc_prf;
+
+    let mut _link_prf = LINK_PRF.lock().unwrap();
+    *_link_prf = link_prf;
+
+    let mut _link_cm = LINK_CM.lock().unwrap();
+    *_link_cm = link_cm_aux;
+
+    true
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn setup_dpp_ge_bn254(
     param_path: *const c_char,
     len: usize,
     cond_buf: *const u64,
@@ -216,16 +451,24 @@ pub extern "C" fn setup_dpp_bn254(
     let link_vk_file = LINK_VK_FILE.as_str();
     fs::write(format!("{path}{link_vk_file}"), link_vk_bytes).unwrap();
 
+    let mut _pp = PARAMS.lock().unwrap();
+    *_pp = pp;
+
+    let mut _cc_vk = CC_VK.lock().unwrap();
+    *_cc_vk = cc_vk;
+
+    let mut _link_vk = LINK_VK.lock().unwrap();
+    *_link_vk = link_vk;
+
     true
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn prove_dpp_bn254(
+pub extern "C" fn prove_dpp_ge_bn254(
     param_path: *const c_char,
     attr_buf: *const u64,
     cond_buf: *const u64,
     chk_buf: *const bool,
-    // enc_recv_path:  // enc_pp_recv를 enc_pp, enc_pk로 묶어서 link_prove 사용
     len: usize,
 ) -> bool {
     let path = match utils::path_from_c_str(param_path, "[param_path]") {
@@ -309,6 +552,78 @@ pub extern "C" fn prove_dpp_bn254(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn prove_dpp_ge_bn254_latest(
+    param_path: *const c_char,
+    attr_buf: *const u64,
+    cond_buf: *const u64,
+    chk_buf: *const bool,
+    len: usize,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
+
+    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    let cond_u64 = unsafe { std::slice::from_raw_parts(cond_buf, len).to_vec() };
+
+    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+    let cond: Vec<F> = cond_u64.iter().map(|&x| F::from(x)).collect();
+    let chk = unsafe { std::slice::from_raw_parts(chk_buf, len).to_vec() };
+
+    let pp = PARAMS.lock().unwrap().clone();
+
+    let circuit = DPPCircuit::<F>::new(attr.clone(), cond.clone(), chk, len);
+
+    let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
+
+    let o = <E as Pairing>::ScalarField::rand(&mut rng);
+    let attr_repr = attr.iter().map(|s| s.into_bigint()).collect::<Vec<_>>();
+    let cm_proj = <E as Pairing>::G1::msm_bigint(&pp.ck[1..], &attr_repr);
+    let cm: <E as Pairing>::G1Affine = (cm_proj + pp.ck[0].into_group() * o.clone()).into();
+
+    let link_witness = LinkSnark::<E>::generate_witness(vec![o], attr, vec![cc_prf.clone().open]);
+    let (link_prf, link_cm_aux) =
+        LinkSnark::<E>::prove(&mut rng, &pp.link_pp, &pp.link_pk, &link_witness);
+
+    let mut cc_prf_byte = Vec::new();
+    cc_prf.serialize_compressed(&mut cc_prf_byte).unwrap();
+    let cc_prf_file = CC_PRF_FILE.as_str();
+    fs::write(format!("{path}{cc_prf_file}"), cc_prf_byte).unwrap();
+
+    let mut link_prf_byte = Vec::new();
+    link_prf.serialize_compressed(&mut link_prf_byte).unwrap();
+    let link_prf_file = LINK_PRF_FILE.as_str();
+    fs::write(format!("{path}{link_prf_file}"), link_prf_byte).unwrap();
+
+    let mut cm_byte = Vec::new();
+    cm.serialize_compressed(&mut cm_byte).unwrap();
+    let cm_file = CM_FILE.as_str();
+    fs::write(format!("{path}{cm_file}"), cm_byte).unwrap();
+
+    let mut link_cm_byte = Vec::new();
+    link_cm_aux.serialize_compressed(&mut link_cm_byte).unwrap();
+    let link_cm_file = LINK_CM_FILE.as_str();
+    fs::write(format!("{path}{link_cm_file}"), link_cm_byte).unwrap();
+
+    let mut _cm = CM.lock().unwrap();
+    *_cm = cm;
+
+    let mut _cc_prf = CC_PRF.lock().unwrap();
+    *_cc_prf = cc_prf;
+
+    let mut _link_prf = LINK_PRF.lock().unwrap();
+    *_link_prf = link_prf;
+
+    let mut _link_cm = LINK_CM.lock().unwrap();
+    *_link_cm = link_cm_aux;
+
+    true
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn verify_dpp_bn254(param_path: *const c_char, len: usize) -> bool {
     let path = match utils::path_from_c_str(param_path, "[param_path]") {
         Some(p) => p,
@@ -360,6 +675,33 @@ pub extern "C" fn verify_dpp_bn254(param_path: *const c_char, len: usize) -> boo
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn verify_dpp_bn254_latest(param_path: *const c_char, len: usize) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let pp = PARAMS.lock().unwrap().clone();
+    let cc_vk = CC_VK.lock().unwrap().clone();
+    let pvk = prepare_verifying_key(&cc_vk);
+    let cc_prf = CC_PRF.lock().unwrap().clone();
+    let cm = CM.lock().unwrap().clone();
+    let link_vk = LINK_VK.lock().unwrap().clone();
+    let link_prf = LINK_PRF.lock().unwrap().clone();
+    let link_cm = LINK_CM.lock().unwrap().clone();
+
+    let link_instance = LinkSnark::<E>::generate_instance(vec![cm], cc_prf.cm, link_cm);
+
+    let snark_res = CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap();
+
+    let link_res = LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf);
+
+    println!("[Verify] SNARK: {}\tLink: {}", snark_res, link_res);
+
+    snark_res && link_res
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn setup_trade_bn254(
     param_path: *const c_char,
     len: usize,
@@ -389,8 +731,6 @@ pub extern "C" fn setup_trade_bn254(
         LinkSnark::<E>::setup(&mut rng, len, enc_ck.ck.clone(), cc_pk.clone().ck, "trade");
     let (link_pk, link_vk) = LinkSnark::<E>::keygen(&mut rng, &link_pp, link_crs);
 
-    use std::time::{Duration, Instant};
-    let start = Instant::now();
     let pp = TradePP {
         cc_pk,
         link_pp,
@@ -403,7 +743,6 @@ pub extern "C" fn setup_trade_bn254(
     pp.serialize_compressed(&mut pp_bytes).unwrap();
     let pp_file = TRADE_PP_FILE.as_str();
     fs::write(format!("{path}{pp_file}"), pp_bytes).unwrap();
-    println!("Writing pp: \t{:#?}", start.elapsed());
 
     let mut cc_vk_bytes = Vec::new();
     cc_vk.serialize_compressed(&mut cc_vk_bytes).unwrap();
@@ -420,24 +759,17 @@ pub extern "C" fn setup_trade_bn254(
     let enc_sk_file = TRADE_ENC_SK_FILE.as_str();
     fs::write(format!("{path}{enc_sk_file}"), enc_sk_bytes).unwrap();
 
-    // let mut _pp = TRADE_PARAMS.lock().unwrap();
-    // *_pp = TradePP {
-    //     cc_pk,
-    //     link_pp,
-    //     link_pk,
-    //     enc_pp,
-    //     enc_pk,
-    //     enc_ck,
-    // };
+    let mut _pp = TRADE_PARAMS.lock().unwrap();
+    *_pp = pp;
 
-    // let mut _cc_vk = TRADE_CC_VK.lock().unwrap();
-    // *_cc_vk = cc_vk;
+    let mut _cc_vk = TRADE_CC_VK.lock().unwrap();
+    *_cc_vk = cc_vk;
 
-    // let mut _link_vk = TRADE_LINK_VK.lock().unwrap();
-    // *_link_vk = link_vk;
+    let mut _link_vk = TRADE_LINK_VK.lock().unwrap();
+    *_link_vk = link_vk;
 
-    // let mut _enc_sk = TRADE_ENC_SK.lock().unwrap();
-    // *_enc_sk = enc_sk;
+    let mut _enc_sk = TRADE_ENC_SK.lock().unwrap();
+    *_enc_sk = enc_sk;
 
     true
 }
@@ -461,18 +793,6 @@ pub extern "C" fn prove_trade_bn254(
 
     let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
     let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
-
-    // let mut attr: Vec<F> = Vec::new();
-    // for i in 0..len {
-    //     let mut attr_limbs: [u64; 4] = [0; 4];
-    //     unsafe {
-    //         std::ptr::copy_nonoverlapping(attr_buf.add(4 * i), attr_limbs.as_mut_ptr(), 4);
-    //     }
-    //     let attr_bigint = BigInt::<4>(attr_limbs);
-    //     attr.push(
-    //         F::from_bigint(attr_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)"),
-    //     );
-    // }
 
     let mut sk_s_limbs: [u64; 4] = [0; 4];
     unsafe {
@@ -505,13 +825,9 @@ pub extern "C" fn prove_trade_bn254(
     let nf_bigint = BigInt::<4>(nf_limbs);
     let nf = F::from_bigint(nf_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
 
-    // let pp = TRADE_PARAMS.lock().unwrap().clone();
-    use std::time::{Duration, Instant};
-    let start = Instant::now();
     let pp_file = TRADE_PP_FILE.as_str();
     let raw_pp = get_file_as_byte_vec(&format!("{path}{pp_file}"));
     let pp = TradePP::<E>::deserialize_compressed(raw_pp.as_slice()).unwrap();
-    println!("Reading pp: \t{:#?}", start.elapsed());
 
     let circuit = TradeCircuit::<F>::new(attr.clone(), sk_s, cm_old_x, cm_old_y, nf, len);
 
@@ -550,17 +866,110 @@ pub extern "C" fn prove_trade_bn254(
     let link_cm_file = TRADE_LINK_CM_FILE.as_str();
     fs::write(format!("{path}{link_cm_file}"), link_cm_byte).unwrap();
 
-    // let mut _ct = TRADE_CT.lock().unwrap();
-    // *_ct = ct;
+    true
+}
 
-    // let mut _cc_prf = TRADE_CC_PRF.lock().unwrap();
-    // *_cc_prf = cc_prf;
+#[unsafe(no_mangle)]
+pub extern "C" fn prove_trade_bn254_latest(
+    param_path: *const c_char,
+    attr_buf: *const u64,
+    sk_s_buf: *const u64,
+    cm_old_x_buf: *const u64,
+    cm_old_y_buf: *const u64,
+    nf_buf: *const u64,
+    len: usize,
+) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
 
-    // let mut _link_prf = TRADE_LINK_PRF.lock().unwrap();
-    // *_link_prf = link_prf;
+    let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
 
-    // let mut _link_cm = TRADE_LINK_CM.lock().unwrap();
-    // *_link_cm = link_cm_aux;
+    let attr_u64 = unsafe { std::slice::from_raw_parts(attr_buf, len).to_vec() };
+    let attr: Vec<F> = attr_u64.iter().map(|&x| F::from(x)).collect();
+
+    let mut sk_s_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(sk_s_buf, sk_s_limbs.as_mut_ptr(), 4);
+    }
+    let sk_s_bigint = BigInt::<4>(sk_s_limbs);
+    let sk_s =
+        F::from_bigint(sk_s_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
+
+    let mut cm_old_x_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(cm_old_x_buf, cm_old_x_limbs.as_mut_ptr(), 4);
+    }
+    let cm_old_x_bigint = BigInt::<4>(cm_old_x_limbs);
+    let cm_old_x =
+        F::from_bigint(cm_old_x_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
+
+    let mut cm_old_y_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(cm_old_y_buf, cm_old_y_limbs.as_mut_ptr(), 4);
+    }
+    let cm_old_y_bigint = BigInt::<4>(cm_old_y_limbs);
+    let cm_old_y =
+        F::from_bigint(cm_old_y_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
+
+    let mut nf_limbs: [u64; 4] = [0; 4];
+    unsafe {
+        std::ptr::copy_nonoverlapping(nf_buf, nf_limbs.as_mut_ptr(), 4);
+    }
+    let nf_bigint = BigInt::<4>(nf_limbs);
+    let nf = F::from_bigint(nf_bigint).expect("[Bn2Fr] Out of range (larger than field modulus)");
+
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+
+    let circuit = TradeCircuit::<F>::new(attr.clone(), sk_s, cm_old_x, cm_old_y, nf, len);
+
+    let cc_prf = CcGroth16::<E>::prove(&pp.cc_pk, circuit, &mut rng).unwrap();
+
+    let (ct, r) = ElGamal::<E>::encrypt(
+        &pp.enc_pp,
+        &pp.enc_pk,
+        &Plaintext::<E> { msg: attr.clone() },
+        &mut rng,
+    )
+    .unwrap();
+
+    let link_witness =
+        LinkSnark::<E>::generate_witness(r.randness, attr, vec![cc_prf.clone().open]);
+    let (link_prf, link_cm_aux) =
+        LinkSnark::<E>::prove(&mut rng, &pp.link_pp, &pp.link_pk, &link_witness);
+
+    let mut cc_prf_byte = Vec::new();
+    cc_prf.serialize_compressed(&mut cc_prf_byte).unwrap();
+    let cc_prf_file = TRADE_CC_PRF_FILE.as_str();
+    fs::write(format!("{path}{cc_prf_file}"), cc_prf_byte).unwrap();
+
+    let mut link_prf_byte = Vec::new();
+    link_prf.serialize_compressed(&mut link_prf_byte).unwrap();
+    let link_prf_file = TRADE_LINK_PRF_FILE.as_str();
+    fs::write(format!("{path}{link_prf_file}"), link_prf_byte).unwrap();
+
+    let mut ct_byte = Vec::new();
+    ct.serialize_compressed(&mut ct_byte).unwrap();
+    let ct_file = TRADE_CT_FILE.as_str();
+    fs::write(format!("{path}{ct_file}"), ct_byte).unwrap();
+
+    let mut link_cm_byte = Vec::new();
+    link_cm_aux.serialize_compressed(&mut link_cm_byte).unwrap();
+    let link_cm_file = TRADE_LINK_CM_FILE.as_str();
+    fs::write(format!("{path}{link_cm_file}"), link_cm_byte).unwrap();
+
+    let mut _ct = TRADE_CT.lock().unwrap();
+    *_ct = ct;
+
+    let mut _cc_prf = TRADE_CC_PRF.lock().unwrap();
+    *_cc_prf = cc_prf;
+
+    let mut _link_prf = TRADE_LINK_PRF.lock().unwrap();
+    *_link_prf = link_prf;
+
+    let mut _link_cm = TRADE_LINK_CM.lock().unwrap();
+    *_link_cm = link_cm_aux;
 
     true
 }
@@ -571,24 +980,6 @@ pub extern "C" fn verify_trade_bn254(param_path: *const c_char, len: usize) -> b
         Some(p) => p,
         None => return false,
     };
-
-    // let pp = TRADE_PARAMS.lock().unwrap().clone();
-
-    // let cc_vk = TRADE_CC_VK.lock().unwrap().clone();
-
-    // let pvk = prepare_verifying_key(&cc_vk);
-
-    // let cc_prf = TRADE_CC_PRF.lock().unwrap().clone();
-
-    // let ct = TRADE_CT.lock().unwrap().clone();
-
-    // let link_vk = TRADE_LINK_VK.lock().unwrap().clone();
-
-    // let link_prf = TRADE_LINK_PRF.lock().unwrap().clone();
-
-    // let link_cm = TRADE_LINK_CM.lock().unwrap().clone();
-
-    // let ct_instance = ct.ct.clone().into_iter().flatten().collect();
 
     let pp_file = TRADE_PP_FILE.as_str();
     let raw_pp = get_file_as_byte_vec(&format!("{path}{pp_file}"));
@@ -634,19 +1025,39 @@ pub extern "C" fn verify_trade_bn254(param_path: *const c_char, len: usize) -> b
     println!("[Verify] SNARK: {}\tLink: {}", snark_res, link_res);
 
     snark_res && link_res
+}
 
-    // CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap()
-    //     && LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf)
+#[unsafe(no_mangle)]
+pub extern "C" fn verify_trade_bn254_latest(param_path: *const c_char, len: usize) -> bool {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+    let cc_vk = TRADE_CC_VK.lock().unwrap().clone();
+    let pvk = prepare_verifying_key(&cc_vk);
+    let cc_prf = TRADE_CC_PRF.lock().unwrap().clone();
+    let ct = TRADE_CT.lock().unwrap().clone();
+    let link_vk = TRADE_LINK_VK.lock().unwrap().clone();
+    let link_prf = TRADE_LINK_PRF.lock().unwrap().clone();
+    let link_cm = TRADE_LINK_CM.lock().unwrap().clone();
+
+    let ct_instance = ct.ct.clone().into_iter().flatten().collect();
+
+    let link_instance = LinkSnark::<E>::generate_instance(ct_instance, cc_prf.cm, link_cm);
+
+    let snark_res = CcGroth16::<E>::verify_proof(&pvk, &cc_prf, &[]).unwrap();
+
+    let link_res = LinkSnark::<E>::verify(&pp.link_pp, &link_vk, &link_instance, &link_prf);
+
+    println!("[Verify] SNARK: {}\tLink: {}", snark_res, link_res);
+
+    snark_res && link_res
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn decrypt_trade_bn254(param_path: *const c_char) -> *mut c_char {
-    // let pp = TRADE_PARAMS.lock().unwrap().clone();
-
-    // let enc_sk = TRADE_ENC_SK.lock().unwrap().clone();
-
-    // let ct = TRADE_CT.lock().unwrap().clone();
-
     let path = match utils::path_from_c_str(param_path, "[param_path]") {
         Some(p) => p,
         None => {
@@ -669,6 +1080,30 @@ pub extern "C" fn decrypt_trade_bn254(param_path: *const c_char) -> *mut c_char 
     let raw_ct = get_file_as_byte_vec(&format!("{path}{ct_file}"));
     let ct =
         <ElGamal<E> as CCEnc<E>>::Ciphertext::deserialize_compressed(raw_ct.as_slice()).unwrap();
+
+    let dec_msg = <ElGamal<E> as CCEnc<E>>::decrypt(&pp.enc_pp, &enc_sk, &ct).unwrap();
+
+    let c_string_dec_msg = CString::new(dec_msg_to_string(dec_msg)).expect("CString::new failed");
+
+    c_string_dec_msg.into_raw()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn decrypt_trade_bn254_latest(param_path: *const c_char) -> *mut c_char {
+    let path = match utils::path_from_c_str(param_path, "[param_path]") {
+        Some(p) => p,
+        None => {
+            return CString::from_str("[ENC] Decryption Failed")
+                .unwrap()
+                .into_raw();
+        }
+    };
+
+    let pp = TRADE_PARAMS.lock().unwrap().clone();
+
+    let enc_sk = TRADE_ENC_SK.lock().unwrap().clone();
+
+    let ct = TRADE_CT.lock().unwrap().clone();
 
     let dec_msg = <ElGamal<E> as CCEnc<E>>::decrypt(&pp.enc_pp, &enc_sk, &ct).unwrap();
 

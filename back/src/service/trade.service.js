@@ -1,7 +1,8 @@
 import lib from "../lib.js";
 import Format from "../utils/format.js";
 
-const param_path = "test/";
+let stamp = 0;
+let param_path = "";
 
 function getCcVk() {
     const vkJson = JSON.parse(lib.get_cc_vk_bn254(param_path, true));
@@ -36,6 +37,8 @@ function getNf(sk_s, cm_old_x, cm_old_y, nf) {
 }
 
 function setup(len, nf) {
+    stamp = +new Date();
+    param_path = Format.path(stamp.toString());
     console.time("Setup");
     if (lib.setup_trade_bn254(param_path, len, nf) != true) {
         throw new Error("Setup failed");
@@ -45,11 +48,16 @@ function setup(len, nf) {
     console.timeEnd("Setup");
 }
 
-function prove(attr, sk_s, cm_old_x, cm_old_y, nf, len) {
+function prove(attr, sk_s, cm_old_x, cm_old_y, nf, len, isLatest) {
     console.time("Prove");
-    if (
-        lib.prove_trade_bn254(param_path, attr, sk_s, cm_old_x, cm_old_y, nf, len) != true
-    ) {
+    let isProven = true;
+    if (isLatest == true) {
+        isProven = lib.prove_trade_bn254_latest(param_path, attr, sk_s, cm_old_x, cm_old_y, nf, len);
+    } else {
+        isProven = lib.prove_trade_bn254(param_path, attr, sk_s, cm_old_x, cm_old_y, nf, len);
+    }
+
+    if (isProven != true) {
         throw new Error("Failed to generate proof");
     } else {
         console.log("Proof generation succeeded");
@@ -57,17 +65,27 @@ function prove(attr, sk_s, cm_old_x, cm_old_y, nf, len) {
     console.timeEnd("Prove");
 }
 
-function verify(len) {
+function verify(len, isLatest) {
     console.time("Verify");
-    let result = lib.verify_trade_bn254(param_path, len);
+    let result = true;
+    if (isLatest == true) {
+        result = lib.verify_trade_bn254_latest(param_path, len);
+    } else {
+        result = lib.verify_trade_bn254(param_path, len);
+    }
     console.timeEnd("Verify");
 
     return result;
 }
 
-function decrypt() {
+function decrypt(isLatest) {
     console.time("Decrypt");
-    let dec_msg = lib.decrypt_trade_bn254(param_path).toString();
+    let dec_msg = "";
+    if (isLatest == true) {
+        dec_msg = lib.decrypt_trade_bn254_latest(param_path).toString();
+    } else {
+        dec_msg = lib.decrypt_trade_bn254(param_path).toString();
+    }
     console.timeEnd("Decrypt");
     let formattedJson = Format.dec_msg(dec_msg);
     return dec_msg;

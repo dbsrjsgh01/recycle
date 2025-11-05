@@ -8,8 +8,9 @@
     },
     "scripts": {
         "start": "node index.js",
+        "clean": "rm -rf test/*",
         "compile": "cd ../crypto && cargo build -r --features \"parallel\" && cd ../back",
-        "test": "npm run compile && nodemon index.js"
+        "test": "npm run compile && npm run clean && nodemon index.js"
     },
     "author": "",
     "license": "ISC",

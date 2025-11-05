@@ -15,6 +15,10 @@ let cond = new BigUint64Array(attrLen).fill(0n);
 let chk = new Uint8Array(attrLen).fill(1);
 chk.set(new Uint8Array(25).fill(0), 25);
 
+let time = +new Date();
+console.log("[TS]", time, "\ttype: ", typeof time);
+let num = time.toString();
+console.log("[Str]", num);
 // ============== Test ==============
 for (let i = 0; i < attrLen / 2; i++) {
     attr[i] = BigInt(i);
@@ -41,6 +45,9 @@ let cmOldYBuf = Buffer.from(cm_old_y.buffer);
 let nfBuf = Buffer.from(nf.buffer);
 
 lib.get_nf(skSBuf, cmOldXBuf, cmOldYBuf, nfBuf);
+
+const isLatest = true;
+const isEq = true;
 
 console.log("Attr: \t", attr);
 console.log("Cond: \t", cond);
@@ -70,7 +77,7 @@ rootRouter.get("/setup", async (req, res) => {
     const resDpp = await fetch("http://localhost:10801/dpp/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cond: condStr, len: attrLen }),
+        body: JSON.stringify({ cond: condStr, len: attrLen, isEq: isEq }),
     });
 
     // (DPP 서킷) 결과 확인 용
@@ -116,21 +123,14 @@ rootRouter.get("/prove-dpp", async (req, res) => {
     const resDppProve = await fetch("http://localhost:10801/dpp/prove", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ attr: attrStr, cond: condStr, chk: chkStr, len: attrLen }),
+        body: JSON.stringify({ attr: attrStr, cond: condStr, chk: chkStr, len: attrLen, isLatest: isLatest, isEq: isEq }),
     });
 
     // (DPP 서킷) 증명 결과 확인용
     const resultDppProve = await resDppProve.json();
 
-    let testVal = [];
-    for (let i = 0; i < attrLen; i++) {
-        let attrVal = [attrStr[4*i], attrStr[4*i+1], attrStr[4*i+2], attrStr[4*i+3]];
-        let condVal = [condStr[4*i], condStr[4*i+1], condStr[4*i+2], condStr[4*i+3]];
-        testVal.push(...[attrVal, condVal, chk[i]]);
-    }
-
     console.log(resultDppProve);
-    res.json({ "Prove Status": resultDppProve, "Test Values": testVal });
+    res.json({ "Prove Status": resultDppProve });
 });
 
 /**
@@ -166,6 +166,7 @@ rootRouter.get("/prove-trade", async (req, res) => {
             cm_old_y: cmOldYStr,
             nf: nfStr,
             len: attrLen,
+            isLatest: isLatest,
         }),
     });
 
@@ -177,11 +178,13 @@ rootRouter.get("/prove-trade", async (req, res) => {
 });
 
 rootRouter.get("/verify-dpp", async (req, res) => {
+    
     const resDppVerify = await fetch ("http://localhost:10801/dpp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             len: attrLen,
+            isLatest: isLatest,
         }),
     });
 
@@ -197,6 +200,7 @@ rootRouter.get("/verify-trade", async (req, res) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             len: attrLen,
+            isLatest: isLatest,
         }),
     });
 
@@ -209,6 +213,10 @@ rootRouter.get("/verify-trade", async (req, res) => {
 rootRouter.get("/decrypt", async (req, res) => {
     const resTradeDecrypt = await fetch ("http://localhost:10801/trade/decrypt", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            isLatest: isLatest,
+        })
     });
 
     const resultTradeDecrypt  = await resTradeDecrypt.json();

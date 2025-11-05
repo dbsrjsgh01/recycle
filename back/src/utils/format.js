@@ -119,6 +119,10 @@ function bigIntToStr(num) {
     return decoder.decode(bytes);
 }
 
+function path(param_path) {
+    return `test/${param_path}_`;
+}
+
 const Format = {
     cc_vk,
     cc_proof,
@@ -128,6 +132,7 @@ const Format = {
     dec_msg,
     strToBigInt,
     bigIntToStr,
+    path,
 };
 
 export default Format;
