@@ -2,6 +2,7 @@ import _ from "lodash";
 import express from "express";
 import expressAsyncHandler from "express-async-handler";
 import DppService from "../service/dpp.service.js";
+import Format from "../utils/format.js";
 
 const dppRouter = express.Router();
 
@@ -25,7 +26,7 @@ async function setup(req, res) {
      * WARNING! 현재 req에 대한 에러 처리는 생략
      */
     const condStr = req.body.cond;
-    const cond = new BigUint64Array(condStr.map((x) => BigInt(x)));
+    const cond = new BigUint64Array(condStr.map((x) => Format.strToBigInt(x)));
     const condBuf = Buffer.from(cond.buffer);
     const len = req.body.len;
 
@@ -49,10 +50,10 @@ async function prove(req, res) {
      * WARNING! 현재 req에 대한 에러 처리는 생략
      */
     const attrStr = req.body.attr;
-    const attr = new BigUint64Array(attrStr.map((x) => BigInt(x)));
+    const attr = new BigUint64Array(attrStr.map((x) => Format.strToBigInt(x)));
     const attrBuf = Buffer.from(attr.buffer);
     const condStr = req.body.cond;
-    const cond = new BigUint64Array(condStr.map((x) => BigInt(x)));
+    const cond = new BigUint64Array(condStr.map((x) => Format.strToBigInt(x)));
     const condBuf = Buffer.from(cond.buffer);
 
     const len = req.body.len;
@@ -78,25 +79,25 @@ async function verify(req, res) {
     res.json({ Verification: result });
 }
 
-// http://localhost:3000/dpp/get/ccvk
+// http://localhost:10801/dpp/get/ccvk
 function getCcVk(req, res) {
     const vkJson = DppService.getCcVk();
     res.json(vkJson);
 }
 
-// http://localhost:3000/dpp/get/ccprf
+// http://localhost:10801/dpp/get/ccprf
 function getCcProof(req, res) {
     const proofJson = DppService.getCcProof();
     res.json(proofJson);
 }
 
-// http://localhost:3000/dpp/get/linkvk
+// http://localhost:10801/dpp/get/linkvk
 function getLinkVk(req, res) {
     const vkJson = DppService.getLinkVk();
     res.json(vkJson);
 }
 
-// http://localhost:3000/dpp/get/linkvk
+// http://localhost:10801/dpp/get/linkvk
 function getLinkProof(req, res) {
     const proofJson = DppService.getLinkProof();
     res.json(proofJson);

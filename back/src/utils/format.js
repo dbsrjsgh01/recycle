@@ -72,10 +72,12 @@ function dec_msg(msgJson) {
     console.log(msgJsonParse);
 
     for (const key in msgJson) {
-        // if (msgJson.)
-        console.log("[" + key + "] = " + msgJson[key]);
-        
+        if (msgJson.hasOwnProperty(key)) {
+            const value = msgJson[key];
+            formattedMsg[key] = Parse.parseAndFormatFrValue(value);
+        }
     }
+    console.log(formattedMsg);
 
     return formattedMsg;
 }

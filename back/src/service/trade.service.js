@@ -31,8 +31,8 @@ function getLinkProof() {
     return formattedProof;
 }
 
-function getNf(cm_old, sk_s, nf) {
-    lib.get_nf(cm_old, sk_s, nf);
+function getNf(sk_s, cm_old_x, cm_old_y, nf) {
+    lib.get_nf(sk_s, cm_old_x, cm_old_y, nf);
 }
 
 function setup(len, nf) {
@@ -45,10 +45,10 @@ function setup(len, nf) {
     console.timeEnd("Setup");
 }
 
-function prove(attr, sk_s, cm_old, nf, len) {
+function prove(attr, sk_s, cm_old_x, cm_old_y, nf, len) {
     console.time("Prove");
     if (
-        lib.prove_trade_bn254(param_path, attr, sk_s, cm_old, nf, len) != true
+        lib.prove_trade_bn254(param_path, attr, sk_s, cm_old_x, cm_old_y, nf, len) != true
     ) {
         throw new Error("Failed to generate proof");
     } else {
@@ -67,7 +67,7 @@ function verify(len) {
 
 function decrypt() {
     console.time("Decrypt");
-    let dec_msg = lib.decrypt_trade_bn254();
+    let dec_msg = lib.decrypt_trade_bn254(param_path).toString();
     console.timeEnd("Decrypt");
     let formattedJson = Format.dec_msg(dec_msg);
     return dec_msg;

@@ -13,7 +13,7 @@ pub struct ElGamal<E: Pairing> {
     _group: PhantomData<E>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Parameters<E: Pairing> {
     pub generator: E::G1Affine,
 }
@@ -26,7 +26,7 @@ impl<E: Pairing> Default for Parameters<E> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct ElGamalCommitKey<E: Pairing> {
     pub ck: Vec<E::G1Affine>, // length
 }
@@ -48,7 +48,7 @@ impl<E: Pairing> Default for PublicKey<E> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct SecretKey<E: Pairing> {
     pub sk: E::ScalarField,
 }

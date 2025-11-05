@@ -27,7 +27,8 @@ use std::{
 pub struct TradeCircuit<F: PrimeField> {
     pub attr: Option<Vec<F>>,
     pub sk_s: Option<F>,
-    pub cm_old: Option<F>,
+    pub cm_old_x: Option<F>,
+    pub cm_old_y: Option<F>,
     pub nf: F,
     pub len: usize,
     round_keys: Vec<F>,
@@ -44,14 +45,15 @@ where
         MiMC7::<F>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS)
     }
 
-    pub fn new(attr: Vec<F>, sk_s: F, cm_old: F, nf: F, len: usize) -> Self
+    pub fn new(attr: Vec<F>, sk_s: F, cm_old_x: F, cm_old_y: F, nf: F, len: usize) -> Self
     where
         <F as FromStr>::Err: Debug,
     {
         Self {
             attr: Some(attr),
             sk_s: Some(sk_s),
-            cm_old: Some(cm_old),
+            cm_old_x: Some(cm_old_x),
+            cm_old_y: Some(cm_old_y),
             nf,
             len,
             round_keys: Self::get_hash_round_keys(),
@@ -65,7 +67,8 @@ where
         Self {
             attr: Some(vec![F::zero(); len]),
             sk_s: Some(F::zero()),
-            cm_old: Some(F::zero()),
+            cm_old_x: Some(F::zero()),
+            cm_old_y: Some(F::zero()),
             nf,
             len,
             round_keys: Self::get_hash_round_keys(),
@@ -86,8 +89,12 @@ where
             self.sk_s.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
-        let cm_old = FpVar::<F>::new_witness(cs.clone(), || {
-            self.cm_old.ok_or(SynthesisError::AssignmentMissing)
+        let cm_old_x = FpVar::<F>::new_witness(cs.clone(), || {
+            self.cm_old_x.ok_or(SynthesisError::AssignmentMissing)
+        })?;
+
+        let cm_old_y = FpVar::<F>::new_witness(cs.clone(), || {
+            self.cm_old_y.ok_or(SynthesisError::AssignmentMissing)
         })?;
 
         let nf = FpVar::<F>::new_constant(cs.clone(), self.nf)?;
@@ -109,13 +116,20 @@ where
             res
         }
 
-        let mut computed_nf = mimc7_round::<F>(cm_old.clone(), sk_s.clone(), &round_keys[0]);
+        fn mimc7<F: PrimeField>(xl: FpVar<F>, xr: FpVar<F>, constants: &[FpVar<F>]) -> FpVar<F> {
+            let mut res = mimc7_round::<F>(xl.clone(), xr.clone(), &constants[0]);
+            for i in 1..MIMC7_ROUNDS {
+                res = mimc7_round::<F>(res, xr.clone(), &constants[i]);
+            }
 
-        for i in 1..MIMC7_ROUNDS {
-            computed_nf = mimc7_round::<F>(computed_nf, sk_s.clone(), &round_keys[i]);
+            res += xr.clone() + xl + xr;
+
+            res
         }
 
-        computed_nf += cm_old.clone() + sk_s.clone() + sk_s;
+        let mut computed_nf = mimc7::<F>(cm_old_x, cm_old_y, &round_keys.clone());
+
+        computed_nf = mimc7::<F>(computed_nf, sk_s, &round_keys);
 
         computed_nf.enforce_equal(&nf)?;
         // ==================================================================
@@ -170,12 +184,14 @@ mod trade_circuit {
         let mut rng = ark_std::rand::rngs::StdRng::seed_from_u64(test_rng().next_u64());
 
         let attr = vec![F::from(2u64); LEN]; // [2, 2, ..., 2]
-        let cm_old = F::rand(&mut rng);
+        let cm_old_x = F::rand(&mut rng);
+        let cm_old_y = F::rand(&mut rng);
         let sk_s = F::rand(&mut rng);
 
         let mimc7_keys = MiMC7::<F>::round_keys_contants_to_vec(&MIMC_7_91_BN254_ROUND_KEYS);
 
-        let nf = MiMC7::<F>::mimc7(cm_old, sk_s, &mimc7_keys);
+        let mut nf = MiMC7::<F>::mimc7(cm_old_x, cm_old_y, &mimc7_keys);
+        nf = MiMC7::<F>::mimc7(nf, sk_s, &mimc7_keys);
 
         // ct
         let enc_pp = ElGamal::<E>::setup(&mut rng).unwrap();
@@ -201,7 +217,7 @@ mod trade_circuit {
         let (link_ek, link_vk) = LinkSnark::<E>::keygen(&mut rng, &link_pp, link_crs);
 
         // prove
-        let circuit = TradeCircuit::<F>::new(attr.clone(), sk_s, cm_old, nf, LEN);
+        let circuit = TradeCircuit::<F>::new(attr.clone(), sk_s, cm_old_x, cm_old_y, nf, LEN);
         let cc_prf = CcGroth16::<E>::prove(&cc_ek, circuit, &mut rng).unwrap();
 
         let link_witness =

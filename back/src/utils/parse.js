@@ -108,7 +108,8 @@ function parseAndFormatFrValue(value) {
     let formattedValue = [];
 
     for (const match of matches) {
-        formattedValue.push(BigInt(match.trim()).toString());
+        const elements = BigInt(match[0]).toString();
+        formattedValue.push(...elements);
     }
 
     return formattedValue;

@@ -2,6 +2,7 @@ import _ from "lodash";
 import express from "express";
 import expressAsyncHandler from "express-async-handler";
 import TradeService from "../service/trade.service.js";
+import Format from "../utils/format.js";
 
 const tradeRouter = express.Router();
 
@@ -30,6 +31,8 @@ async function setup(req, res) {
     const nf = new BigUint64Array(nfStr.map((x) => BigInt(x)));
     const nfBuf = Buffer.from(nf.buffer);
 
+    console.log("nf: \t", nf);
+
     const len = req.body.len;
 
     TradeService.setup(len, nfBuf);
@@ -52,11 +55,14 @@ async function prove(req, res) {
      * WARNING! 현재 req에 대한 에러 처리는 생략
      */
     const attrStr = req.body.attr;
-    const attr = new BigUint64Array(attrStr.map((x) => BigInt(x)));
+    const attr = new BigUint64Array(attrStr.map((x) => Format.strToBigInt(x)));
     const attrBuf = Buffer.from(attr.buffer);
-    const cmOldStr = req.body.cm_old;
-    const cm_old = new BigUint64Array(cmOldStr.map((x) => BigInt(x)));
-    const cmOldBuf = Buffer.from(cm_old.buffer);
+    const cmOldXStr = req.body.cm_old_x;
+    const cm_old_x = new BigUint64Array(cmOldXStr.map((x) => BigInt(x)));
+    const cmOldXBuf = Buffer.from(cm_old_x.buffer);
+    const cmOldYStr = req.body.cm_old_y;
+    const cm_old_y = new BigUint64Array(cmOldYStr.map((x) => BigInt(x)));
+    const cmOldYBuf = Buffer.from(cm_old_y.buffer);
     const skSStr = req.body.sk_s;
     const sk_s = new BigUint64Array(skSStr.map((x) => BigInt(x)));
     const skSBuf = Buffer.from(sk_s.buffer);
@@ -66,7 +72,7 @@ async function prove(req, res) {
 
     const len = req.body.len;
 
-    TradeService.prove(attrBuf, skSBuf, cmOldBuf, nfBuf, len);
+    TradeService.prove(attrBuf, skSBuf, cmOldXBuf, cmOldYBuf, nfBuf, len);
 
     res.json({ Prove: true });
 }
@@ -80,9 +86,12 @@ async function verify(req, res) {
 }
 
 async function nf(req, res) {
-    const cmOldStr = req.body.cm_old;
-    const cm_old = new BigUint64Array(cmOldStr.map((x) => BigInt(x)));
-    const cmOldBuf = Buffer.from(cm_old.buffer);
+    const cmOldXStr = req.body.cm_old_x;
+    const cm_old_x = new BigUint64Array(cmOldXStr.map((x) => BigInt(x)));
+    const cmOldXBuf = Buffer.from(cm_old_x.buffer);
+    const cmOldYStr = req.body.cm_old_y;
+    const cm_old_y = new BigUint64Array(cmOldYStr.map((x) => BigInt(x)));
+    const cmOldYBuf = Buffer.from(cm_old_y.buffer);
     const skSStr = req.body.sk_s;
     const sk_s = new BigUint64Array(skSStr.map((x) => BigInt(x)));
     const skSBuf = Buffer.from(sk_s.buffer);
@@ -90,9 +99,11 @@ async function nf(req, res) {
     const nf = new BigUint64Array(nfStr.map((x) => BigInt(x)));
     const nfBuf = Buffer.from(nf.buffer);
 
-    TradeService.getNf(cmOldBuf, skSBuf, nfBuf);
+    TradeService.getNf(skSBuf, cmOldXBuf, cmOldYBuf, nfBuf);
 
-    res.json({ nf: nf });
+    res.json({ nf: Array.from(nf, (x) => x.toString()) });
+    
+    return nf;
 }
 
 async function decrypt(req, res) {
@@ -101,25 +112,25 @@ async function decrypt(req, res) {
     res.json({ Decryption: "Success", MSG: dec_msg });
 }
 
-// http://localhost:3000/trade/get/ccvk
+// http://localhost:10801/trade/get/ccvk
 function getCcVk(req, res) {
     const vkJson = TradeService.getCcVk();
     res.json(vkJson);
 }
 
-// http://localhost:3000/trade/get/ccprf
+// http://localhost:10801/trade/get/ccprf
 function getCcProof(req, res) {
     const proofJson = TradeService.getCcProof();
     res.json(proofJson);
 }
 
-// http://localhost:3000/trade/get/linkvk
+// http://localhost:10801/trade/get/linkvk
 function getLinkVk(req, res) {
     const vkJson = TradeService.getLinkVk();
     res.json(vkJson);
 }
 
-// http://localhost:3000/trade/get/linkprf
+// http://localhost:10801/trade/get/linkprf
 function getLinkProof(req, res) {
     const proofJson = TradeService.getLinkProof();
     res.json(proofJson);
